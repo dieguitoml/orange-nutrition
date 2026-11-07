@@ -1,0 +1,144 @@
+# nutrition_app — Service API (for the frontend)
+
+Everything is exported from `src/index.ts`. All service functions are `async`, run **entirely on the device**
+(IndexedDB via Dexie), and throw `DataError` (`code`: `NOT_FOUND | VALIDATION | CONFLICT | QUOTA | DB | CONVERSION | UNAVAILABLE`)
+with a human-readable `message` and optional `details` (e.g. a list of validation issues).
+
+```ts
+import { initializeApp, searchFoods, addMealEntry, getDailySummary, today } from './nutrition_app/src';
+
+await initializeApp();               // once at startup: opens DB, runs migrations, seeds USDA foods, purges stale cache
+const results = await searchFoods('greek yogurt');
+await addMealEntry({ date: today(), mealType: 'breakfast', foodId: results[0].food.id, quantity: { amount: 170, unit: 'g' } });
+const summary = await getDailySummary();   // totals, per meal, goal progress, remaining calories
+```
+
+## Key rules the UI must respect
+
+| Concept | Rule |
+|---|---|
+| Dates | `LocalDate` = `'YYYY-MM-DD'` in the user's local calendar. Use `today()`, `toLocalDate(date)`, `addDays()`. Never `toISOString().slice(0,10)`. |
+| Units | Canonical units per nutrient in `NUTRIENTS[id].unit` (`kcal`, `g`, `mg`, `ug`=µg). Display with `formatNutrientValue` / `formatNutrientTotal` (the only place rounding happens). |
+| Missing data | `NutrientValue.status`: `known`, `zero`, `estimated`, `missing`. An absent key = missing. Show "—" for missing, "~" for estimated, "≥" when `isLowerBound`. |
+| Coverage vs intake | `NutrientTotal.amount` is intake from items **with data**; `coverage.ratio` (0–1, mass-weighted) is how much of what was eaten had data. Show both; `coverage.withData === 0` means "no data", not 0. |
+| History | `MealEntry.snapshot` + `MealEntry.nutrients` are frozen at log time. Editing/deleting foods or recipes never changes past days. |
+| Attribution | Show `food.source.attribution` (USDA FoodData Central / "Data from Open Food Facts", ODbL) on food detail screens. |
+| Medical | Reference targets (`REFERENCE_DAILY_VALUES`) are general FDA Daily Values, informational only. No deficiency inference. |
+
+## Startup & storage
+
+| Function | Description |
+|---|---|
+| `initializeApp(): Promise<InitializeResult>` | Open DB (migrations), idempotent seed, purge expired barcode cache. |
+| `requestPersistentStorage(): Promise<boolean>` | Ask the browser not to evict data (call after first user interaction). |
+| `getStorageEstimate()` | `{ usage, quota, persisted }` (nulls when unsupported). |
+| `seedDatabase({ force? })` | Re-run seeding (normally automatic). |
+| `deleteDatabase()` | Irreversible wipe (use after an export). |
+
+## Foods
+
+| Function | Description |
+|---|---|
+| `searchFoods(query, { limit?, category?, includeArchived? }): Promise<FoodSearchResult[]>` | Offline token-prefix search over names/brands/aliases; digit-only queries also match barcodes. Ranked by match quality, favorites, usage, completeness. |
+| `getFood(id)` / `getFoods(ids)` / `listFoods({ sourceType?, includeArchived? })` | Reads. |
+| `createCustomFood(input: CustomFoodInput)` | User food. Only include nutrients you know; use `{status:'zero',amount:0}` for declared zeros. `allergenInfoConfirmed: true` only if the user confirmed the allergen list. |
+| `updateFood(id, patch)` | Edits user foods in place; editing a USDA/OFF food creates a custom copy. |
+| `deleteFood(id)` | Deletes user foods, archives USDA/OFF foods. |
+| `setFoodFavorite(id, bool)` / `getFavoriteFoods()` | Favorites (stored in preferences). |
+| `getRecentFoods(limit?)` | Distinct recently logged foods, newest first (`food` may be null if deleted; `lastEntry` always present). |
+
+## Barcode (Open Food Facts)
+
+The frontend handles the camera + detection and passes the decoded string.
+
+| Function | Description |
+|---|---|
+| `getFoodByBarcode(barcode): Promise<Food \| null>` | `Food` if found (local, cache or network), `null` if the product doesn't exist. Throws `DataError('VALIDATION')` for malformed codes and `DataError('UNAVAILABLE')` when offline/network failure with no cached copy → offer manual entry. |
+| `lookupBarcode(barcode, { forceRefresh? }): Promise<BarcodeLookupResult>` | Same, but returns an explicit outcome: `found` (with `origin: local / cache / network / stale_cache`), `not_found`, `invalid`, `error` (`code: OFFLINE / TIMEOUT / NETWORK / RATE_LIMITED / HTTP / INVALID_RESPONSE`). Preferred for UI. |
+| `createFoodForBarcode(barcode, input)` | Manual-entry fallback; the saved user food wins on later scans. |
+| `isValidGtin(code)` / `normalizeBarcode(input)` | Helpers. |
+| `configureOpenFoodFacts(new OpenFoodFactsClient({ timeoutMs, maxRequestsPerMinute, ... }))` | Optional tuning. |
+
+Behaviour: found products are cached 30 days and saved to `foods` (searchable offline); "not found" is cached 7 days; concurrent lookups of the same code share one request; client-side limit of 30 lookups/minute (OFF allows ~100/min); 8 s timeout; 2 retries with backoff for network/5xx errors only.
+**Browser note:** browsers (including iOS Safari) forbid setting `User-Agent` from scripts, so the app identifies itself via `app_name`/`app_version` query parameters; the `User-Agent` header is only sent outside browsers. Only the barcode is sent to OFF, never personal logs.
+
+## Meal logging
+
+| Function | Description |
+|---|---|
+| `addMealEntry({ date, mealType, foodId, quantity, note?, loggedAt? })` | `quantity` supports `g, kg, mg, oz, lb` always; `serving` with `servingId` (or the default serving); `ml, l, tsp, tbsp, cup, fl_oz` when the food has a density or volume-based serving (else `DataError('CONVERSION')`). |
+| `updateMealEntry(id, { quantity?, mealType?, date?, note? \| null })` | Recomputed from the entry's own snapshot. |
+| `deleteMealEntry(id)` | |
+| `duplicateMealEntry(id, { date?, mealType? })` | |
+| `copyMeals({ fromDate, toDate, mealType?, toMealType? })` | Atomic copy of a day or a meal. |
+| `getDailyMeals(date): Record<MealType, MealEntry[]>` | Grouped, time-ordered. |
+| `getMealsByCategory(date, mealType)` | Uses the `[date+mealType]` index. |
+| `calculateDailyTotals(date)` | `{ total, byMeal }` totals. |
+
+## Recipes
+
+| Function | Description |
+|---|---|
+| `createRecipe({ name, servings, ingredients?: [{ foodId, quantity, note? }], cookedWeightGrams?, prepTimeMinutes?, cookTimeMinutes?, mealTypes?, instructions?, tags? })` | |
+| `updateRecipe(id, patch)` | `null` clears optional fields. |
+| `deleteRecipe(id)` | Logged entries keep their snapshots. |
+| `addIngredient(recipeId, input)` / `updateIngredient(recipeId, ingredientId, { quantity?, note? })` / `removeIngredient(recipeId, ingredientId)` | |
+| `getRecipeNutrition(id): RecipeNutrition` | `total`, `perServing` (with coverage), `per100g`, `gramsPerServing`, `ingredientsUsingSnapshot` (deleted foods). Per-100 g uses `cookedWeightGrams` when set, otherwise raw ingredient weight (water loss is never guessed). |
+| `logRecipe(recipeId, { date, mealType, servings?, note? })` | Logs N servings as one entry. |
+| `listRecipes()` / `searchRecipes(q)` / `setRecipeFavorite(id, bool)` | |
+
+## Goals & preferences
+
+| Function | Description |
+|---|---|
+| `getGoals(date?)` | Goals in effect on a date (versioned by `effectiveFrom`; past days keep old goals). |
+| `setMacroGoals({ calories?, protein?, carbohydrate?, fat?, fiber? }, effectiveFrom?)` | 0 removes a target. |
+| `setNutrientTarget(id, { amount, direction, tolerance? } \| null, effectiveFrom?)` | Any nutrient. `direction`: `atLeast`, `atMost`, `around` (±10 % default). |
+| `applyReferenceMicronutrientTargets(effectiveFrom?, overwrite?)` | Fill unset micronutrient targets with FDA Daily Values (marked `origin: 'reference'`). |
+| `setGoals(targets, effectiveFrom?)` / `listGoalHistory()` | Low-level. |
+| `getPreferences()` / `updatePreferences(patch)` | `diets`, `allergies`, `dislikedFoodIds`, `dislikedKeywords`, `favoriteFoodIds`, `favoriteRecipeIds`, `availableIngredientIds`, `maxPrepTimeMinutes`, `weekStartsOn`, `unitSystem`. |
+| `setDiets`, `setAllergies`, `setDislikedFood`, `setDislikedKeywords`, `setAvailableIngredients` | Shortcuts. |
+
+No weight, height, age or medical data is collected.
+
+## History & analytics
+
+| Function | Description |
+|---|---|
+| `getDailySummary(date?)` | `DailyNutritionSummary`: totals, `byMeal`, `progress` per targeted nutrient (`consumed`, `remaining`, `percent`, `status`, `isLowerBound`), `remainingCalories`. |
+| `getDailySummaries(start, end)` | One indexed range query. |
+| `getWeeklySummary(date?)` | Week per `weekStartsOn`. Averages over **logged days only** (`loggedDays`); `adherence` per nutrient. |
+| `getPeriodSummary(end?, days = 7)` | Rolling window. |
+| `getNutrientTrend(nutrientId, start, end)` | Points with `amount: null` on unlogged days, plus coverage and target. |
+| `getGoalAdherence(start, end)` | `{ daysMet, daysEvaluated, ratio }` per nutrient. |
+| `getMostFrequentFoods(start, end, limit?)` | |
+| `getMealHistory(start, end)` | Entries grouped by date, newest first. |
+| `getNutrientCoverage(start, end)` | Per nutrient: `averageCoverage`, `completeDays`, `level: good / partial / poor / none`. |
+
+Pure builders (`buildDailySummary`, `buildPeriodSummary`, `buildTrend`, `coverageIndicators`, `mostFrequentFoods`…) are exported for UI-side reuse.
+
+## Recommendations (rule-based, not a chatbot)
+
+| Function | Description |
+|---|---|
+| `recommend(request: RecommendationRequest): Promise<Recommendation[]>` | `intent`: `meal`, `high_protein`, `low_calorie`, `high_fiber`, `use_ingredients`, `micronutrient` (needs `nutrientId`), `fit_remaining`. Optional `mealType` (default from local hour), `ingredientIds`, `maxPrepTimeMinutes`, `maxCalories`, `date`, `limit` (default 5). |
+| `recommendFromText(text, { limit?, date? })` | Parses common phrases ("high protein snack under 300 kcal", "foods rich in iron", "what can I make with eggs and spinach", "dinner in 20 minutes") → `{ parsed, matchedIngredients, unmatchedTerms, recommendations }`. Check `parsed.confidence`. |
+| `parseIntent(text)` | Parser only. |
+
+Each `Recommendation`: `name`, `kind` (`food` / `combo` plate / `recipe`), `ingredients[]` (`foodId`, `name`, `grams`, `quantityLabel`), `nutrition` (`NutrientTotals` computed from food data), `prepTimeMinutes` (estimate or `null`), `explanation[]`, `score` 0–100, `scoreBreakdown`.
+Allergies, diets (vegan, vegetarian, pescatarian, gluten_free, dairy_free), disliked foods/keywords and max prep time are **hard exclusions**. Foods with unknown allergen info are excluded when the user has any allergy or diet.
+
+## Backup / restore
+
+| Function | Description |
+|---|---|
+| `exportBackup({ includeSeedFoods?, includeProductCache? }): Promise<BackupPayload>` | Versioned payload with counts and checksum. |
+| `exportBackupJson(opts?)` | `{ json, filename }` (create a `Blob`, or use the share sheet on iOS). |
+| `validateBackup(jsonOrObject): BackupValidationResult` | Full validation without writing: `{ valid, errors[], warnings[] }`. |
+| `importBackup(jsonOrObject, { mode: 'merge' \| 'replace', onDuplicate: 'newest' \| 'overwrite' \| 'skip' })` | Validates everything first, then writes in **one transaction**. Invalid input throws `DataError('VALIDATION', …, errors)` and changes nothing. Returns per-table `inserted / updated / skipped`. |
+
+## iOS Safari / PWA notes
+
+- IndexedDB works in Safari and standalone PWAs. Safari **tabs** may evict script-writable storage after 7 days without use. Home-screen PWAs are exempt, but recommend installing the PWA, calling `requestPersistentStorage()`, and exporting backups regularly.
+- Private browsing can make IndexedDB unavailable → `initializeApp()` throws `DataError('UNAVAILABLE')`.
+- Barcode lookup is the only network call; everything else works offline.

@@ -1,0 +1,30 @@
+{
+  "name": "nutrition_app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local-first nutrition data layer (IndexedDB, offline) for a personal nutrition tracking PWA",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed:build": "tsx scripts/build-usda-seed.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dexie": "^4.4.7",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "fake-indexeddb": "^6.2.7",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  }
+}
