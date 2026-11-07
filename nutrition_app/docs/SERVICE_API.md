@@ -164,6 +164,12 @@ await logPhotoMeal({ date: today(), mealType: 'lunch', photoId: result.photoId,
 | `getPhotoBlob(photoId)` | For `<img src={URL.createObjectURL(blob)}>`. |
 | `deletePhoto(id)` / `purgeOrphanPhotos(hours = 24)` | Unconfirmed photos are purged automatically on `initializeApp()`. Deleting the last entry that uses a photo deletes the photo. Photos aren't included in JSON backups. |
 
+### Conversational assistant (chat)
+
+| Function | Description |
+|---|---|
+| `chatWithAssistant({ message, history?: { role, text }[], date?, now? }): Promise<AssistantChatResult>` | Natural-language chat with Gemini (uses the AI suggestions switch). The model gets today's logged foods, nutrient totals with coverage, 7-day averages, targets, diets/allergies/dislikes and an allergy-filtered food catalog, plus the last 8 turns. Returns `{ text, recommendations, followUps, rejected, model }`. Meal cards are validated locally and their nutrition comes from the database. Throws `DataError('UNAVAILABLE', …, { code })` so the UI can fall back to the rule engine. |
+
 ### Smart suggestions
 
 | Function | Description |

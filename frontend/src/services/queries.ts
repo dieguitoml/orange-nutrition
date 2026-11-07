@@ -1,6 +1,8 @@
 /** TanStack Query bindings over the service adapter. UI code imports from here. */
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type {
+  AiStatus,
+  ChatTurn,
   CustomFoodInput,
   Goals,
   ISODate,
@@ -27,6 +29,7 @@ export const qk = {
   goals: ['goals'] as const,
   prefs: ['prefs'] as const,
   prompts: ['prompts'] as const,
+  ai: ['ai'] as const,
 }
 
 /** Anything derived from diary contents. */
@@ -165,7 +168,24 @@ export function useUpdatePreferences() {
 }
 
 export function useAsk() {
-  return useMutation({ mutationFn: (v: { message: string; date: ISODate }) => api.recommendations.ask(v.message, { date: v.date }) })
+  return useMutation({
+    mutationFn: (v: { message: string; date: ISODate; history?: ChatTurn[] }) => api.recommendations.ask(v.message, { date: v.date, history: v.history }),
+  })
+}
+
+// ── AI (Gemini) ──────────────────────────────────────────────────────────
+export const useAiStatus = () => useQuery({ queryKey: qk.ai, queryFn: () => api.ai.status() })
+
+function useAiMutation<V>(fn: (v: V) => Promise<AiStatus>) {
+  const qc = useQueryClient()
+  return useMutation({ mutationFn: fn, onSuccess: (status) => qc.setQueryData(qk.ai, status) })
+}
+export const useSetAiKey = () => useAiMutation((key: string | null) => api.ai.setApiKey(key))
+export const useAcceptAiNotice = () => useAiMutation((_: void) => api.ai.acceptPrivacyNotice())
+export const useRevokeAi = () => useAiMutation((forgetKey: boolean) => api.ai.revokeConsent(forgetKey))
+export const useSetAssistantEnabled = () => useAiMutation((enabled: boolean) => api.ai.setAssistantEnabled(enabled))
+export function useTestAi() {
+  return useMutation({ mutationFn: () => api.ai.test() })
 }
 
 export function useBarcodeLookup() {

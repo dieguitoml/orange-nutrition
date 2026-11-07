@@ -9,8 +9,8 @@ import { DEFAULT_GEMINI_MODEL, GeminiClient, GeminiError } from '../../integrati
 export const AI_PRIVACY_NOTICE = [
   'AI features send data to Google Gemini using your own free API key:',
   '• Photo recognition sends the meal photo you take.',
-  '• AI suggestions send today’s nutrient totals, your targets, allergies, diets, disliked foods, available ingredients and the names/nutrition of candidate foods from the app’s food list.',
-  'Your meal history, backups and other personal data are never sent.',
+  '• The AI assistant and suggestions send your chat messages (and the last few turns of the conversation), today’s logged foods and nutrient totals, your 7-day nutrient averages, targets, allergies, diets, disliked foods, and the names/nutrition of candidate foods from the app’s food list.',
+  'Older meal history, backups and other personal data are never sent.',
   'On Google’s free tier, requests may be reviewed and used by Google to improve its products. Do not use AI features if that is not acceptable.',
   'AI output is never used for nutrient values: the app always calculates nutrition from its own food database, and you confirm every item before it is logged.',
 ].join('\n');

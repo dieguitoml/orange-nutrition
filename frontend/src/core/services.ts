@@ -4,7 +4,9 @@
  * totals, coverage, adherence, recipe calculation) happens in the backend — never in React.
  */
 import type {
+  AiStatus,
   AssistantReply,
+  ChatTurn,
   BackupExport,
   BackupValidation,
   BarcodeResult,
@@ -66,7 +68,8 @@ export interface RecipeService {
 }
 
 export interface RecommendationService {
-  ask(message: string, context: { date: ISODate }): Promise<AssistantReply>
+  /** Uses Gemini when the AI assistant is enabled, otherwise (or on AI failure) the rule engine. */
+  ask(message: string, context: { date: ISODate; history?: ChatTurn[] }): Promise<AssistantReply>
   getDailyInsights(date: ISODate): Promise<DailyInsight[]>
   /** Prompts the rule engine supports, for the suggestion chips. */
   suggestedPrompts(): Promise<string[]>
@@ -93,6 +96,15 @@ export interface BackupService {
   import(file: unknown): Promise<void>
 }
 
+export interface AiService {
+  status(): Promise<AiStatus>
+  setApiKey(key: string | null): Promise<AiStatus>
+  acceptPrivacyNotice(): Promise<AiStatus>
+  revokeConsent(forgetKey?: boolean): Promise<AiStatus>
+  setAssistantEnabled(enabled: boolean): Promise<AiStatus>
+  test(): Promise<{ ok: boolean; message: string }>
+}
+
 export interface NutritionBackend {
   foods: FoodService
   barcode: BarcodeService
@@ -104,4 +116,5 @@ export interface NutritionBackend {
   goals: GoalService
   preferences: PreferenceService
   backup: BackupService
+  ai: AiService
 }

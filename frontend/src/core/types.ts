@@ -290,6 +290,27 @@ export interface AssistantReply {
   recommendations: Recommendation[]
   /** Follow-up prompts the engine can actually handle. */
   followUps?: string[]
+  /** 'ai' = answered by Gemini; 'rules' = local rule-based engine. */
+  source?: 'ai' | 'rules'
+  /** Shown under the reply, e.g. why the AI wasn't used this time. */
+  notice?: string
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+/** AI (Gemini) configuration as the UI sees it. The API key itself is never exposed. */
+export interface AiStatus {
+  hasApiKey: boolean
+  apiKeyHint: string | null
+  consentAccepted: boolean
+  assistantEnabled: boolean
+  /** Key + consent + switch on. */
+  assistantAvailable: boolean
+  model: string
+  privacyNotice: string
 }
 
 export interface DailyInsight {

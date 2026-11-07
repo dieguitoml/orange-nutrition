@@ -1,8 +1,8 @@
-import { ArrowUp, RotateCcw, Sparkles } from 'lucide-react'
+import { ArrowUp, RotateCcw, Settings2, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import type { AssistantReply, MealType, Recommendation } from '@/core/types'
+import type { AssistantReply, ChatTurn, MealType, Recommendation } from '@/core/types'
 import { ChatMessage, TypingIndicator } from '@/components/ChatMessage'
 import { MealPicker } from '@/components/food/MealPicker'
 import { NutritionCard } from '@/components/NutritionCard'
@@ -14,7 +14,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { mealForNow } from '@/lib/dates'
 import { MEAL_LABELS } from '@/lib/format'
 import { useSelectedDate } from '@/lib/selectedDate'
-import { useAsk, useLogRecommendation, useSuggestedPrompts } from '@/services/queries'
+import { useAiStatus, useAsk, useLogRecommendation, useSuggestedPrompts } from '@/services/queries'
 
 type Msg = { id: string; role: 'user'; text: string } | { id: string; role: 'assistant'; reply: AssistantReply }
 
@@ -36,6 +36,9 @@ export function AssistantScreen() {
   const [addRec, setAddRec] = useState<Recommendation | null>(null)
   const ask = useAsk()
   const prompts = useSuggestedPrompts()
+  const ai = useAiStatus()
+  const aiOn = !!ai.data?.assistantAvailable
+  const navigate = useNavigate()
   const endRef = useRef<HTMLDivElement>(null)
   const [params, setParams] = useSearchParams()
 
@@ -53,9 +56,10 @@ export function AssistantScreen() {
     if (!t || ask.isPending) return
     setInput('')
     setFailed(null)
+    const history: ChatTurn[] = messages.slice(-8).map((m) => (m.role === 'user' ? { role: 'user', text: m.text } : { role: 'assistant', text: m.reply.text }))
     setMessages((m) => [...m, { id: crypto.randomUUID(), role: 'user', text: t }])
     try {
-      const reply = await ask.mutateAsync({ message: t, date })
+      const reply = await ask.mutateAsync({ message: t, date, history })
       setMessages((m) => [...m, { id: reply.id, role: 'assistant', reply }])
     } catch (error) {
       setFailed({ text: t, error })
@@ -82,8 +86,8 @@ export function AssistantScreen() {
   return (
     <div className="flex min-h-[calc(100dvh-var(--nav-height)-var(--safe-bottom)-var(--safe-top)-40px)] flex-col">
       <PageHeader
-        title="Recommendations"
-        subtitle="Meal ideas from your goals and today's diary"
+        title="Assistant"
+        subtitle={aiOn ? 'Chat with Gemini about your food, goals and meals' : "Meal ideas from your goals and today's diary"}
         actions={
           messages.length > 0 && (
             <IconButton label="Clear conversation" onClick={() => setMessages([])}>
@@ -100,10 +104,23 @@ export function AssistantScreen() {
               <Sparkles className="size-4" />
               <p className="text-[13px] font-semibold uppercase tracking-wide">How this works</p>
             </div>
-            <p className="mt-2 text-[15px] leading-relaxed">
-              Suggestions come from a rule-based engine that looks at your targets, what you've logged today, your diet and allergies. Nutrition is
-              always calculated from the food database. It isn't a general chatbot — try one of the prompts below.
-            </p>
+            {aiOn ? (
+              <p className="mt-2 text-[15px] leading-relaxed">
+                Ask anything about your eating: what to cook tonight, how your protein is going, ideas with what's in your fridge. Answers come from
+                Google Gemini using today's diary and your goals; meal cards are checked against your allergies and their nutrition is always
+                calculated from the food database.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-[15px] leading-relaxed">
+                  Suggestions come from a rule-based engine that looks at your targets, what you've logged today, your diet and allergies. Nutrition is
+                  always calculated from the food database. Try one of the prompts below.
+                </p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate('/settings#ai')}>
+                  <Settings2 className="size-4" /> Turn on the Gemini AI assistant
+                </Button>
+              </>
+            )}
           </div>
         )}
 
@@ -114,7 +131,11 @@ export function AssistantScreen() {
             </ChatMessage>
           ) : (
             <div key={m.id} className="space-y-3">
-              <ChatMessage role="assistant">{m.reply.text}</ChatMessage>
+              <ChatMessage role="assistant">
+                <span className="whitespace-pre-line">{m.reply.text}</span>
+                {m.reply.source === 'ai' && <span className="mt-1 block text-[11px] font-medium uppercase tracking-wide text-muted">Gemini</span>}
+              </ChatMessage>
+              {m.reply.notice && <p className="pl-10 text-[12.5px] text-muted">{m.reply.notice}</p>}
               {m.reply.recommendations.length > 0 && (
                 <div className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
                   {m.reply.recommendations.map((r) => (
@@ -161,7 +182,7 @@ export function AssistantScreen() {
             id="chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about meals, protein, fiber…"
+            placeholder={aiOn ? 'Ask me anything about your food…' : 'Ask about meals, protein, fiber…'}
             enterKeyHint="send"
             autoComplete="off"
             className="h-12 min-w-0 flex-1 rounded-full border border-border bg-surface px-5 text-base outline-none placeholder:text-muted/80 focus:border-primary focus:ring-4 focus:ring-primary/15"

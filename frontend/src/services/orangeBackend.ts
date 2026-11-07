@@ -13,7 +13,9 @@ import type { NutritionBackend } from '@/core/services'
 import {
   MEAL_TYPES,
   NUTRIENTS,
+  type AiStatus,
   type AssistantReply,
+  type ChatTurn,
   type DailyInsight,
   type DayStat,
   type DaySummary,
@@ -355,7 +357,34 @@ async function weeklyNutrientGaps(date: ISODate): Promise<AssistantReply> {
   return reply(parts.join(' '), recs)
 }
 
-async function ask(message: string, date: ISODate): Promise<AssistantReply> {
+const AI_ERROR_TEXT: Record<string, string> = {
+  RATE_LIMITED: 'Gemini’s free quota is used up for now',
+  INVALID_KEY: 'your Gemini API key was rejected — check it in Settings',
+  PERMISSION_DENIED: 'Gemini refused the request — check your API key in Settings',
+  OFFLINE: 'you’re offline',
+  TIMEOUT: 'Gemini took too long to answer',
+  NETWORK: 'Gemini couldn’t be reached',
+  BLOCKED: 'Gemini declined to answer that',
+}
+
+/** Gemini first (when enabled), rule engine as fallback. */
+async function ask(message: string, date: ISODate, history: ChatTurn[] = []): Promise<AssistantReply> {
+  const ai = await B.getAiSettingsPublic()
+  if (ai.aiSuggestionsAvailable) {
+    try {
+      const r = await B.chatWithAssistant({ message, history, date })
+      return { ...reply(r.text, r.recommendations.map(recToUI), r.followUps.length ? r.followUps : undefined), source: 'ai' }
+    } catch (e) {
+      const code = e instanceof B.DataError ? ((e.details as { code?: string } | undefined)?.code ?? '') : ''
+      const why = AI_ERROR_TEXT[code] ?? 'the AI answer couldn’t be used'
+      const fallback = await askRules(message, date)
+      return { ...fallback, source: 'rules', notice: `Answered by the built-in engine because ${why}.` }
+    }
+  }
+  return { ...(await askRules(message, date)), source: 'rules' }
+}
+
+async function askRules(message: string, date: ISODate): Promise<AssistantReply> {
   if (/(less of|lowest|low in|lacking|short on).*(week|nutrient)|nutrients?.*(this week|week)/i.test(message)) return weeklyNutrientGaps(date)
 
   const [res, summary] = await Promise.all([B.recommendFromText(message, { date, limit: 3 }), B.getDailySummary(date)])
@@ -481,7 +510,42 @@ const DIET_TO_B: Record<string, B.DietType> = {
 const DIET_TO_UI = Object.fromEntries(Object.entries(DIET_TO_B).map(([k, v]) => [v, k])) as Record<B.DietType, string>
 
 // ── the backend ──────────────────────────────────────────────────────────
+function aiStatus(s: B.AiSettingsPublic): AiStatus {
+  return {
+    hasApiKey: s.hasApiKey,
+    apiKeyHint: s.apiKeyHint,
+    consentAccepted: !!s.consentAcceptedAt,
+    assistantEnabled: s.aiSuggestionsEnabled,
+    assistantAvailable: s.aiSuggestionsAvailable,
+    model: s.model,
+    privacyNotice: B.AI_PRIVACY_NOTICE,
+  }
+}
+
+const aiService = initialized({
+  async status() {
+    return aiStatus(await B.getAiSettingsPublic())
+  },
+  async setApiKey(key: string | null) {
+    return aiStatus(await B.setAiApiKey(key))
+  },
+  async acceptPrivacyNotice() {
+    return aiStatus(await B.acceptAiPrivacyNotice())
+  },
+  async revokeConsent(forgetKey?: boolean) {
+    return aiStatus(await B.revokeAiConsent(forgetKey))
+  },
+  async setAssistantEnabled(enabled: boolean) {
+    return aiStatus(await B.updateAiSettings({ aiSuggestionsEnabled: enabled }))
+  },
+  async test() {
+    const r = await B.testAiConnection()
+    return r.ok ? { ok: true, message: `Connected to ${r.model}` } : { ok: false, message: AI_ERROR_TEXT[r.code] ?? r.message }
+  },
+})
+
 export const orangeBackend: NutritionBackend = {
+  ai: aiService,
   foods: initialized({
     async search(query: string) {
       if (!query.trim()) return []
@@ -633,8 +697,8 @@ export const orangeBackend: NutritionBackend = {
   }),
 
   recommendations: initialized({
-    async ask(message: string, { date }: { date: ISODate }) {
-      return ask(message, date)
+    async ask(message: string, { date, history }: { date: ISODate; history?: ChatTurn[] }) {
+      return ask(message, date, history)
     },
     async getDailyInsights(date: ISODate) {
       return insightsFor(await daySummary(date), date === B.today())

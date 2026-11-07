@@ -1,5 +1,5 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
-import { ChevronDown, Download, Monitor, Moon, Share, Sun, Upload, X } from 'lucide-react'
+import { ChevronDown, Download, ExternalLink, KeyRound, Monitor, Moon, Share, Sparkles, Sun, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { REFERENCE_PROFILES, type ReferenceProfileId } from '@/core/references'
@@ -13,7 +13,19 @@ import { FieldError, Input, Label } from '@/components/ui/input'
 import { SegmentedControl } from '@/components/ui/segmented'
 import { cn } from '@/lib/utils'
 import { api } from '@/services'
-import { useGoals, useImportBackup, usePreferences, useUpdateGoals, useUpdatePreferences } from '@/services/queries'
+import {
+  useAcceptAiNotice,
+  useAiStatus,
+  useGoals,
+  useImportBackup,
+  usePreferences,
+  useRevokeAi,
+  useSetAiKey,
+  useSetAssistantEnabled,
+  useTestAi,
+  useUpdateGoals,
+  useUpdatePreferences,
+} from '@/services/queries'
 
 export function SettingsScreen() {
   const goals = useGoals()
@@ -29,6 +41,7 @@ export function SettingsScreen() {
         <div className="space-y-6">
           <TargetsSection goals={goals.data} />
           <MicroTargetsSection goals={goals.data} />
+          <AiSection />
           <PreferencesSection prefs={prefs.data} />
           <ThemeSection prefs={prefs.data} />
           <DataSection />
@@ -39,9 +52,9 @@ export function SettingsScreen() {
   )
 }
 
-function Group({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+function Group({ title, description, children, id }: { title: string; description?: string; children: ReactNode; id?: string }) {
   return (
-    <section>
+    <section id={id} className="scroll-mt-4">
       <h2 className="px-1 text-[13px] font-semibold uppercase tracking-wide text-muted">{title}</h2>
       {description && <p className="mb-2 mt-0.5 px-1 text-[13px] text-muted">{description}</p>}
       <Card className={cn('space-y-4', !description && 'mt-2')}>{children}</Card>
@@ -446,6 +459,164 @@ function InstallSection() {
             </li>
           ))}
         </ol>
+      )}
+    </Group>
+  )
+}
+
+function AiSection() {
+  const status = useAiStatus()
+  const setKey = useSetAiKey()
+  const accept = useAcceptAiNotice()
+  const revoke = useRevokeAi()
+  const setEnabled = useSetAssistantEnabled()
+  const test = useTestAi()
+  const [key, setKeyInput] = useState('')
+  const [showNotice, setShowNotice] = useState(false)
+
+  useEffect(() => {
+    if (window.location.hash === '#ai') document.getElementById('ai')?.scrollIntoView({ behavior: 'smooth' })
+  }, [status.data])
+
+  const s = status.data
+  const run = async (fn: () => Promise<unknown>, ok?: string) => {
+    try {
+      await fn()
+      if (ok) toast.success(ok)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong')
+    }
+  }
+
+  return (
+    <Group
+      id="ai"
+      title="AI assistant (Gemini)"
+      description="Optional. Uses your own free Google Gemini API key, stored only on this device."
+    >
+      {!s ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : (
+        <>
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-soft text-accent">
+              <Sparkles className="size-4" />
+            </div>
+            <p className="text-[14px] leading-relaxed">
+              {s.assistantAvailable
+                ? 'The Assistant tab is chatting with Gemini.'
+                : 'Turn this on to chat with Gemini in the Assistant tab. Without it, the built-in rule-based suggestions are used.'}
+            </p>
+          </div>
+
+          {/* 1. API key */}
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-key">API key</Label>
+            {s.hasApiKey ? (
+              <div className="flex items-center gap-2">
+                <div className="flex h-12 flex-1 items-center gap-2 rounded-2xl border border-border bg-surface-2 px-4 text-sm">
+                  <KeyRound className="size-4 text-muted" /> Saved key {s.apiKeyHint}
+                </div>
+                <Button variant="outline" onClick={() => run(() => setKey.mutateAsync(null), 'API key removed')}>
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <Input
+                    id="ai-key"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Paste your Gemini API key"
+                    value={key}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                  />
+                  <Button
+                    disabled={key.trim().length < 10 || setKey.isPending}
+                    onClick={() => run(async () => (await setKey.mutateAsync(key.trim()), setKeyInput('')), 'API key saved')}
+                  >
+                    Save
+                  </Button>
+                </div>
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[13px] font-medium text-accent"
+                >
+                  Get a free key at Google AI Studio <ExternalLink className="size-3.5" />
+                </a>
+              </>
+            )}
+          </div>
+
+          {/* 2. Privacy notice */}
+          {s.hasApiKey && !s.consentAccepted && (
+            <div className="space-y-3 rounded-2xl bg-soft p-4">
+              <p className="text-[14px] font-medium">Before turning AI on</p>
+              <p className="whitespace-pre-line text-[13px] leading-relaxed text-foreground/80">
+                {showNotice ? s.privacyNotice : s.privacyNotice.split('\n').slice(0, 2).join('\n')}
+              </p>
+              {!showNotice && (
+                <button type="button" className="text-[13px] font-medium text-accent" onClick={() => setShowNotice(true)}>
+                  Read the full notice
+                </button>
+              )}
+              <Button className="w-full" disabled={accept.isPending} onClick={() => run(() => accept.mutateAsync(), 'Thanks — you can now turn the assistant on')}>
+                I understand, continue
+              </Button>
+            </div>
+          )}
+
+          {/* 3. Switch + test */}
+          {s.hasApiKey && s.consentAccepted && (
+            <>
+              <label className="flex min-h-11 items-center justify-between gap-3">
+                <span className="text-[15px]">Use Gemini in the Assistant</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  className="peer sr-only"
+                  checked={s.assistantEnabled}
+                  disabled={setEnabled.isPending}
+                  onChange={(e) => run(() => setEnabled.mutateAsync(e.target.checked))}
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    'relative h-7 w-12 shrink-0 rounded-full transition peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20',
+                    s.assistantEnabled ? 'bg-primary' : 'bg-surface-2 border border-border',
+                  )}
+                >
+                  <span className={cn('absolute top-0.5 size-6 rounded-full bg-white shadow transition-all', s.assistantEnabled ? 'left-[22px]' : 'left-0.5')} />
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={test.isPending}
+                  onClick={async () => {
+                    const r = await test.mutateAsync().catch((e: unknown) => ({ ok: false, message: e instanceof Error ? e.message : 'Failed' }))
+                    if (r.ok) toast.success(r.message)
+                    else toast.error(r.message)
+                  }}
+                >
+                  {test.isPending ? 'Testing…' : 'Test connection'}
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => run(() => revoke.mutateAsync(false), 'AI turned off')}>
+                  Turn AI off
+                </Button>
+              </div>
+              <p className="text-[12.5px] leading-relaxed text-muted">
+                Your chat messages, today's diary and 7-day nutrient averages are sent to Google to answer. Google's free tier may use them to improve
+                its products. Nutrition numbers on meal cards always come from the app's food database.
+              </p>
+            </>
+          )}
+        </>
       )}
     </Group>
   )
