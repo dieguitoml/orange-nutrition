@@ -171,6 +171,9 @@ export interface FoodSnapshot {
   densityGPerMl?: number;
 }
 
+/** How an entry was created (for UI badges / analytics). */
+export type EntryOrigin = 'manual' | 'barcode' | 'photo_ai' | 'recipe' | 'copy' | 'suggestion';
+
 export interface MealEntry {
   id: string;
   date: LocalDate;
@@ -187,6 +190,9 @@ export interface MealEntry {
   /** Absolute nutrients for this entry (snapshot × grams). */
   nutrients: NutrientValues;
   note?: string;
+  origin?: EntryOrigin;
+  /** Local photo (see `photos` table) attached to this entry. */
+  photoId?: string;
   /** When the user says it was eaten / logged (used for "recent" ordering). */
   loggedAt: IsoTimestamp;
   createdAt: IsoTimestamp;
@@ -409,6 +415,8 @@ export interface RecommendationIngredient {
 
 export interface Recommendation {
   id: string;
+  /** 'ai' = proposed by the AI provider (nutrition still computed locally); 'rules' = local engine. */
+  source?: 'rules' | 'ai';
   kind: 'food' | 'recipe' | 'combo';
   name: string;
   mealType?: MealType;
@@ -470,4 +478,72 @@ export interface BackupPayload {
   counts: Record<string, number>;
   /** FNV-1a hash of JSON.stringify(data) for integrity checking. */
   checksum: string;
+}
+
+// ---------------------------------------------------------------------------
+// Photos & AI
+// ---------------------------------------------------------------------------
+
+/** A meal photo stored locally on the device (never uploaded except to the AI provider when the user opts in). */
+export interface StoredPhoto {
+  id: string;
+  mimeType: string;
+  data: ArrayBuffer;
+  byteLength: number;
+  width?: number;
+  height?: number;
+  createdAt: IsoTimestamp;
+}
+
+export type AiProvider = 'gemini';
+
+/**
+ * AI configuration, stored only on the device (meta table, excluded from backups).
+ * AI features stay off until the user adds their own free API key AND accepts the privacy notice.
+ */
+export interface AiSettings {
+  provider: AiProvider;
+  apiKey: string | null;
+  /** Model id, e.g. "gemini-flash-latest". */
+  model: string;
+  photoRecognitionEnabled: boolean;
+  aiSuggestionsEnabled: boolean;
+  /** When the user accepted AI_PRIVACY_NOTICE; null = not accepted (AI disabled). */
+  consentAcceptedAt: IsoTimestamp | null;
+}
+
+/** What the AI saw in the photo. `estimatedGrams` is a visual ESTIMATE the user must confirm. */
+export interface DetectedFood {
+  name: string;
+  searchTerms: string[];
+  estimatedGrams: number;
+  /** 0..1 as reported by the model (not calibrated). */
+  confidence: number;
+  preparation?: string;
+}
+
+export interface PhotoRecognitionItem {
+  id: string;
+  detected: DetectedFood;
+  /** Local foods matching the detection, best first (nutrition always comes from these). */
+  matches: FoodSearchResult[];
+  /** Pre-selected match (null when nothing in the database matched → user must search or create a food). */
+  selectedFoodId: string | null;
+  grams: number;
+  /** Nutrients for `grams` of the selected food (empty when unmatched). */
+  nutrients: NutrientValues;
+}
+
+export interface PhotoRecognitionResult {
+  id: string;
+  isFood: boolean;
+  description: string;
+  items: PhotoRecognitionItem[];
+  /** Totals over matched items only. */
+  totals: NutrientTotals;
+  unmatchedCount: number;
+  photoId?: string;
+  provider: AiProvider;
+  model: string;
+  createdAt: IsoTimestamp;
 }

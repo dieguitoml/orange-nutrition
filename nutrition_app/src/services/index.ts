@@ -6,3 +6,4 @@ export * from './goals';
 export * from './history';
 export * from './recommendations';
 export * from './backup';
+export * from './ai';

@@ -391,26 +391,87 @@ export function generateRecommendations(ctx: RecommendationContext): Recommendat
     const main = s.candidate.parts[0]?.foodId ?? s.candidate.id;
     if ((usedMain.get(main) ?? 0) >= 2) continue;
     usedMain.set(main, (usedMain.get(main) ?? 0) + 1);
-    const ingredients: RecommendationIngredient[] = s.candidate.parts.map((p) => ({
-      foodId: p.foodId,
-      name: p.name,
-      grams: p.grams,
-      quantityLabel: p.food ? quantityLabel(p.food, roundTo(p.grams, 0)) : `${roundTo(p.grams, 0)} g`,
-    }));
-    out.push({
-      id: s.candidate.id,
-      kind: s.candidate.kind,
-      name: s.candidate.name,
-      mealType: req.mealType,
-      ingredients,
-      nutrition: s.candidate.nutrition,
-      prepTimeMinutes: s.candidate.prepTimeMinutes,
-      explanation: s.explanation,
-      score: roundTo(s.score, 1),
-      scoreBreakdown: s.breakdown,
-      ...(s.candidate.recipe ? { recipeId: s.candidate.recipe.id } : {}),
-    });
+    out.push(toRecommendation(s, req.mealType));
     if (out.length >= limit) break;
   }
   return out;
+}
+
+function toRecommendation(s: Scored, mealType: MealType, source: 'rules' | 'ai' = 'rules'): Recommendation {
+  const ingredients: RecommendationIngredient[] = s.candidate.parts.map((p) => ({
+    foodId: p.foodId,
+    name: p.name,
+    grams: p.grams,
+    quantityLabel: p.food ? quantityLabel(p.food, roundTo(p.grams, 0)) : `${roundTo(p.grams, 0)} g`,
+  }));
+  return {
+    id: s.candidate.id,
+    source,
+    kind: s.candidate.kind,
+    name: s.candidate.name,
+    mealType,
+    ingredients,
+    nutrition: s.candidate.nutrition,
+    prepTimeMinutes: s.candidate.prepTimeMinutes,
+    explanation: s.explanation,
+    score: roundTo(s.score, 1),
+    scoreBreakdown: s.breakdown,
+    ...(s.candidate.recipe ? { recipeId: s.candidate.recipe.id } : {}),
+  };
+}
+
+export interface ExternalCandidate {
+  id: string;
+  name: string;
+  parts: { food: Food; grams: number }[];
+  prepTimeMinutes: number | null;
+  /** Extra explanation lines (e.g. the AI's reasoning), shown before computed facts. */
+  notes?: string[];
+}
+
+export type ExternalEvaluation = { ok: true; recommendation: Recommendation } | { ok: false; reason: string };
+
+/**
+ * Validates and scores a meal proposed outside the engine (e.g. by the AI provider):
+ * HARD filters are re-applied locally, quantities are bounded, and nutrition is computed from
+ * local food data — the proposer's own nutrition claims are never used.
+ */
+export function evaluateExternalCandidate(ctx: RecommendationContext, input: ExternalCandidate): ExternalEvaluation {
+  if (input.parts.length === 0) return { ok: false, reason: 'no ingredients' };
+  const restriction = checkAllRestrictions(input.parts.map((p) => p.food), ctx.preferences);
+  if (!restriction.allowed) return { ok: false, reason: restriction.reasons.join('; ') };
+  if (input.parts.some((p) => p.food.isArchived)) return { ok: false, reason: 'uses an archived food' };
+  if (input.parts.some((p) => !(p.grams > 0) || p.grams > 1500)) return { ok: false, reason: 'implausible quantity' };
+  if (input.parts.some((p) => kcalPer100(p.food) === null)) return { ok: false, reason: 'an ingredient has no energy data' };
+  const maxPrep = ctx.request.maxPrepTimeMinutes ?? ctx.preferences.maxPrepTimeMinutes;
+  if (maxPrep !== undefined && input.prepTimeMinutes !== null && input.prepTimeMinutes > maxPrep) return { ok: false, reason: 'exceeds max prep time' };
+  const budget = computeBudget(ctx.request, ctx.goals, ctx.todayTotals);
+  const parts = input.parts.map((p) => ({ food: p.food, grams: p.grams < 20 ? Math.max(1, Math.round(p.grams)) : Math.round(p.grams) }));
+  const nutrition = sumNutrients(parts.map((p) => ({ grams: p.grams, nutrients: nutrientsForGrams(p.food, p.grams) })));
+  if (ctx.request.maxCalories !== undefined && nutrition.energy.amount > ctx.request.maxCalories * 1.05) return { ok: false, reason: 'exceeds calorie limit' };
+  const candidate: Candidate = {
+    id: input.id,
+    kind: parts.length === 1 ? 'food' : 'combo',
+    name: input.name,
+    parts: parts.map((p) => ({ food: p.food, grams: p.grams, foodId: p.food.id, name: p.food.name })),
+    nutrition,
+    totalGrams: parts.reduce((s, p) => s + p.grams, 0),
+    prepTimeMinutes: input.prepTimeMinutes,
+  };
+  const scored = scoreCandidate(candidate, ctx, budget);
+  if (!scored) return { ok: false, reason: 'cannot be evaluated with available data' };
+  if (input.notes?.length) scored.explanation.unshift(...input.notes);
+  return { ok: true, recommendation: toRecommendation(scored, ctx.request.mealType, 'ai') };
+}
+
+/** Foods that pass the user's hard restrictions (the only foods an AI may propose). */
+export function allowedFoodPool(ctx: Pick<RecommendationContext, 'foods' | 'preferences' | 'request'>): Food[] {
+  const maxPrep = ctx.request.maxPrepTimeMinutes ?? ctx.preferences.maxPrepTimeMinutes;
+  return ctx.foods.filter(
+    (f) =>
+      !f.isArchived &&
+      kcalPer100(f) !== null &&
+      checkFoodRestrictions(f, ctx.preferences).allowed &&
+      (maxPrep === undefined || f.prepTimeMinutes === undefined || f.prepTimeMinutes <= maxPrep),
+  );
 }

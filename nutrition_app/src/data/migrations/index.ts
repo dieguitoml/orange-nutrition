@@ -7,6 +7,7 @@ import { tokenize } from '../../core/utils/text';
  * v1: initial tables.
  * v2: search tokens on foods (multi-entry index), compound [date+mealType] index on meal entries,
  *     `meta` table (seed version, app metadata). Upgrade backfills searchTokens for existing foods.
+ * v3: `photos` table for meal photos; `photoId` index on meal entries.
  */
 export const SCHEMA_V1 = {
   foods: 'id, name, barcode, category, source.type, updatedAt',
@@ -25,7 +26,13 @@ export const SCHEMA_V2 = {
   meta: 'key',
 } as const;
 
-export const CURRENT_DB_VERSION = 2;
+export const SCHEMA_V3 = {
+  ...SCHEMA_V2,
+  mealEntries: 'id, date, mealType, [date+mealType], foodId, recipeId, loggedAt, photoId',
+  photos: 'id, createdAt',
+} as const;
+
+export const CURRENT_DB_VERSION = 3;
 
 export function foodSearchTokens(food: { name: string; brand?: string; aliases?: string[] }): string[] {
   return tokenize([food.name, food.brand ?? '', ...(food.aliases ?? [])].join(' '));

@@ -1,12 +1,14 @@
 import { getDb } from './data/db';
 import { seedDatabase, type SeedResult } from './data/seed';
 import { purgeExpiredProductCache } from './services/barcode';
+import { purgeOrphanPhotos } from './services/ai/photos';
 import { DataError } from './core/utils/errors';
 import { toDataError } from './data/db/errors';
 
 export interface InitializeResult {
   seed: SeedResult;
   purgedCacheEntries: number;
+  purgedPhotos: number;
 }
 
 /**
@@ -22,5 +24,6 @@ export async function initializeApp(): Promise<InitializeResult> {
   }
   const seed = await seedDatabase();
   const purgedCacheEntries = await purgeExpiredProductCache().catch(() => 0);
-  return { seed, purgedCacheEntries };
+  const purgedPhotos = await purgeOrphanPhotos().catch(() => 0);
+  return { seed, purgedCacheEntries, purgedPhotos };
 }

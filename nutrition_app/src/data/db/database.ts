@@ -1,8 +1,8 @@
 import Dexie, { type Table } from 'dexie';
-import type { CachedProduct, DailyGoals, Food, MealEntry, Recipe, UserPreferences } from '../../core/types/domain';
+import type { CachedProduct, DailyGoals, Food, MealEntry, Recipe, StoredPhoto, UserPreferences } from '../../core/types/domain';
 import type { NutrientDefinition } from '../../core/types/nutrients';
 import { DEFAULT_DB_NAME } from '../../core/constants/app';
-import { SCHEMA_V1, SCHEMA_V2, upgradeToV2 } from '../migrations';
+import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, upgradeToV2 } from '../migrations';
 
 /** Stored food = Food + derived search tokens (internal, stripped before returning to callers). */
 export interface FoodRecord extends Food {
@@ -23,11 +23,13 @@ export class NutritionDB extends Dexie {
   preferences!: Table<UserPreferences, string>;
   cachedProducts!: Table<CachedProduct, string>;
   meta!: Table<MetaRecord, string>;
+  photos!: Table<StoredPhoto, string>;
 
   constructor(name: string = DEFAULT_DB_NAME, options?: ConstructorParameters<typeof Dexie>[1]) {
     super(name, options);
     this.version(1).stores(SCHEMA_V1);
     this.version(2).stores(SCHEMA_V2).upgrade(upgradeToV2);
+    this.version(3).stores(SCHEMA_V3);
   }
 }
 

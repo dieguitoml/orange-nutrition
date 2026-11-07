@@ -66,7 +66,7 @@ Behaviour: found products are cached 30 days and saved to `foods` (searchable of
 
 | Function | Description |
 |---|---|
-| `addMealEntry({ date, mealType, foodId, quantity, note?, loggedAt? })` | `quantity` supports `g, kg, mg, oz, lb` always; `serving` with `servingId` (or the default serving); `ml, l, tsp, tbsp, cup, fl_oz` when the food has a density or volume-based serving (else `DataError('CONVERSION')`). |
+| `addMealEntry({ date, mealType, foodId, quantity, note?, loggedAt?, origin?, photoId? })` | `quantity` supports `g, kg, mg, oz, lb` always; `serving` with `servingId` (or the default serving); `ml, l, tsp, tbsp, cup, fl_oz` when the food has a density or volume-based serving (else `DataError('CONVERSION')`). |
 | `updateMealEntry(id, { quantity?, mealType?, date?, note? \| null })` | Recomputed from the entry's own snapshot. |
 | `deleteMealEntry(id)` | |
 | `duplicateMealEntry(id, { date?, mealType? })` | |
@@ -128,6 +128,50 @@ Pure builders (`buildDailySummary`, `buildPeriodSummary`, `buildTrend`, `coverag
 Each `Recommendation`: `name`, `kind` (`food` / `combo` plate / `recipe`), `ingredients[]` (`foodId`, `name`, `grams`, `quantityLabel`), `nutrition` (`NutrientTotals` computed from food data), `prepTimeMinutes` (estimate or `null`), `explanation[]`, `score` 0–100, `scoreBreakdown`.
 Allergies, diets (vegan, vegetarian, pescatarian, gluten_free, dairy_free), disliked foods/keywords and max prep time are **hard exclusions**. Foods with unknown allergen info are excluded when the user has any allergy or diet.
 
+## AI: photo recognition & smart suggestions (Google Gemini, opt-in)
+
+AI is **off by default**. To turn it on: (1) the user pastes their own free key from Google AI Studio, (2) accepts `AI_PRIVACY_NOTICE`, (3) enables each feature. The key is stored only on the device (`meta` table) and is never included in backups. Calls go straight from the browser to `generativelanguage.googleapis.com`; CORS is supported for `*.github.io`.
+
+**The AI never provides nutrient values.** It only names foods and estimates grams (photos) or picks foods and grams from the app's catalog (suggestions). Nutrition is always calculated locally from the database, hard allergy/diet filters are re-applied, and the user confirms before anything is logged.
+
+| Function | Description |
+|---|---|
+| `AI_PRIVACY_NOTICE` | Text to show before enabling (what is sent, Google free-tier data use). |
+| `setAiApiKey(key \| null)` | Save or remove the key. Returns `AiSettingsPublic` (never contains the key; `apiKeyHint` like `…x9Qk`). |
+| `acceptAiPrivacyNotice()` / `revokeAiConsent(forgetKey?)` | Consent with timestamp. Revoking turns every AI feature off. |
+| `updateAiSettings({ photoRecognitionEnabled?, aiSuggestionsEnabled?, model? })` | Throws `VALIDATION` if there's no key or no consent. Default model: `gemini-flash-latest`, falling back automatically to `gemini-2.5-flash` / `gemini-2.0-flash` if a model is retired. |
+| `getAiSettingsPublic()` | `{ hasApiKey, apiKeyHint, photoRecognitionAvailable, aiSuggestionsAvailable, model, consentAcceptedAt, ... }`. |
+| `testAiConnection()` | `{ ok: true, model }` or `{ ok: false, code, message }` (`INVALID_KEY`, `RATE_LIMITED`, `NO_CONSENT`…). |
+
+### Photo → meal flow
+
+```ts
+// 1. Frontend: <input type="file" accept="image/*" capture="environment"> → File
+const result = await recognizeMealPhoto(file, { mealType: 'lunch', hint: 'no dressing' });
+// 2. Show result.items: detected.name, detected.estimatedGrams (an ESTIMATE), matches[] (local foods),
+//    selectedFoodId (may be null → let the user search or create a food), nutrients for the current grams.
+//    The user can change the match, edit grams, or remove items.
+// 3. Log only what the user confirmed:
+await logPhotoMeal({ date: today(), mealType: 'lunch', photoId: result.photoId,
+  items: [{ foodId: 'usda_171477', grams: 160 }, { foodId: 'usda_168878', quantity: { amount: 1, unit: 'cup' } }] });
+```
+
+| Function | Description |
+|---|---|
+| `recognizeMealPhoto(image: Blob \| ArrayBuffer, { mealType?, hint?, savePhoto? = true }): Promise<PhotoRecognitionResult>` | Downscales the photo to ≤ 1024 px JPEG on-device, sends it to Gemini, then matches each item to local foods (preferring cooked forms for "grilled/cooked", never dry weights unless stated). Nothing is logged. Throws `DataError('UNAVAILABLE', …, { code })` when AI is off or the provider fails (`RATE_LIMITED`, `OFFLINE`, `INVALID_KEY`…). Fall back to manual search. |
+| `matchDetectedFood(detected)` | Re-run matching (e.g. after the user renames an item). |
+| `logPhotoMeal({ date, mealType, items: [{ foodId, grams? \| quantity? }], photoId?, note? })` | Atomic. Entries get `origin: 'photo_ai'` and `photoId`. |
+| `getPhotoBlob(photoId)` | For `<img src={URL.createObjectURL(blob)}>`. |
+| `deletePhoto(id)` / `purgeOrphanPhotos(hours = 24)` | Unconfirmed photos are purged automatically on `initializeApp()`. Deleting the last entry that uses a photo deletes the photo. Photos aren't included in JSON backups. |
+
+### Smart suggestions
+
+| Function | Description |
+|---|---|
+| `getSmartSuggestions({ text?, request? }): Promise<SmartSuggestionsResult>` | **Recommended entry point for the suggestions screen.** Uses Gemini when enabled and the rule-based engine otherwise, or on any AI error/quota limit. Result: `{ source: 'ai' \| 'rules', recommendations, fallbackReason?, rejected[] }`. Each `Recommendation` has `source`; AI ones start their `explanation` with the AI's short reason, followed by locally computed facts. |
+
+Only aggregated context is sent: today's macro totals, remaining targets, the calorie budget, diets, available/favorite food ids, and an allergy-filtered catalog of food names with per-100 g macros. Meal history is never sent. Any AI proposal that uses a food outside that catalog, a restricted food, implausible grams, or exceeds the calorie/prep limits is rejected and listed in `rejected`.
+
 ## Backup / restore
 
 | Function | Description |
@@ -141,4 +185,4 @@ Allergies, diets (vegan, vegetarian, pescatarian, gluten_free, dairy_free), disl
 
 - IndexedDB works in Safari and standalone PWAs. Safari **tabs** may evict script-writable storage after 7 days without use. Home-screen PWAs are exempt, but recommend installing the PWA, calling `requestPersistentStorage()`, and exporting backups regularly.
 - Private browsing can make IndexedDB unavailable → `initializeApp()` throws `DataError('UNAVAILABLE')`.
-- Barcode lookup is the only network call; everything else works offline.
+- Barcode lookup and the opt-in AI features are the only network calls; everything else works offline.

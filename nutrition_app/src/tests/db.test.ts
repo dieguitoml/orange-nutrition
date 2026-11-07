@@ -9,7 +9,7 @@ import { DataError } from '../core/utils/errors';
 import { freshDb, k, makeFood } from './helpers';
 
 describe('database migrations', () => {
-  it('upgrades v1 → v2 preserving data and backfilling search tokens', async () => {
+  it('upgrades v1 → v3 preserving data, backfilling search tokens and adding photos', async () => {
     const name = `migrate_${Date.now()}`;
     const v1 = new Dexie(name);
     v1.version(1).stores(SCHEMA_V1);
@@ -21,14 +21,16 @@ describe('database migrations', () => {
 
     const db = setDb(new NutritionDB(name));
     await db.open();
-    expect(db.verno).toBe(2);
+    expect(db.verno).toBe(3);
     const migrated = await db.foods.get('legacy_1');
     expect(migrated?.name).toBe('Crème Fraîche Deluxe');
     expect(migrated?.searchTokens).toEqual(expect.arrayContaining(['creme', 'fraiche', 'deluxe']));
     // new compound index works on migrated rows
     const rows = await db.mealEntries.where('[date+mealType]').equals(['2026-01-01', 'lunch']).toArray();
     expect(rows.map((r) => r.id)).toEqual(['m1']);
-    expect(await db.meta.count()).toBe(0); // new table exists
+    expect(await db.meta.count()).toBe(0); // v2 table exists
+    expect(await db.photos.count()).toBe(0); // v3 table exists
+    expect(await db.mealEntries.where('photoId').equals('none').count()).toBe(0); // v3 index
   });
 });
 

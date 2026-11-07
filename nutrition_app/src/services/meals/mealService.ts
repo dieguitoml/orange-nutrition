@@ -1,4 +1,4 @@
-import type { LocalDate, MealEntry, MealType, Quantity } from '../../core/types/domain';
+import type { EntryOrigin, LocalDate, MealEntry, MealType, Quantity } from '../../core/types/domain';
 import { MEAL_TYPES } from '../../core/types/domain';
 import { nutrientsForQuantity, mealTotals } from '../../core/nutrition/calculations';
 import { assertLocalDate, nowIso } from '../../core/utils/dates';
@@ -16,6 +16,10 @@ export interface AddFoodEntryInput {
   note?: string;
   /** Defaults to now. */
   loggedAt?: string;
+  /** e.g. 'barcode' when the food came from a scan (default 'manual'). */
+  origin?: EntryOrigin;
+  /** Attach a locally stored photo. */
+  photoId?: string;
 }
 
 /** Logs a food. The food's current nutrition is frozen into the entry. */
@@ -36,6 +40,8 @@ export async function addMealEntry(input: AddFoodEntryInput): Promise<MealEntry>
     grams,
     nutrients,
     ...(input.note ? { note: input.note } : {}),
+    origin: input.origin ?? 'manual',
+    ...(input.photoId ? { photoId: input.photoId } : {}),
     loggedAt: input.loggedAt ?? now,
     createdAt: now,
     updatedAt: now,
@@ -72,9 +78,16 @@ export async function updateMealEntry(id: string, patch: UpdateMealEntryInput): 
   );
 }
 
+/** Deletes an entry; its photo is removed too when no other entry uses it. */
 export async function deleteMealEntry(id: string): Promise<void> {
-  await mealEntryRepository.getOrThrow(id);
-  await mealEntryRepository.delete(id);
+  const e = await mealEntryRepository.getOrThrow(id);
+  const db = getDb();
+  await guard('Delete meal entry', () =>
+    db.transaction('rw', db.mealEntries, db.photos, async () => {
+      await db.mealEntries.delete(id);
+      if (e.photoId && (await db.mealEntries.where('photoId').equals(e.photoId).count()) === 0) await db.photos.delete(e.photoId);
+    }),
+  );
 }
 
 /** Duplicates one entry (same snapshot), optionally to another date/meal. */
@@ -82,7 +95,7 @@ export async function duplicateMealEntry(id: string, target: { date?: LocalDate;
   const e = await mealEntryRepository.getOrThrow(id);
   if (target.date) assertLocalDate(target.date);
   const now = nowIso();
-  return mealEntryRepository.add({ ...structuredClone(e), id: createId('meal'), date: target.date ?? e.date, mealType: target.mealType ?? e.mealType, loggedAt: now, createdAt: now, updatedAt: now });
+  return mealEntryRepository.add({ ...structuredClone(e), id: createId('meal'), date: target.date ?? e.date, mealType: target.mealType ?? e.mealType, origin: 'copy', loggedAt: now, createdAt: now, updatedAt: now });
 }
 
 export interface CopyMealsInput {
@@ -104,7 +117,7 @@ export async function copyMeals(input: CopyMealsInput): Promise<MealEntry[]> {
   const base = Date.now();
   const copies = source.map((e, i) => {
     const ts = new Date(base + i).toISOString(); // preserves order
-    return { ...structuredClone(e), id: createId('meal'), date: input.toDate, mealType: input.toMealType ?? e.mealType, loggedAt: ts, createdAt: ts, updatedAt: ts };
+    return { ...structuredClone(e), id: createId('meal'), date: input.toDate, mealType: input.toMealType ?? e.mealType, origin: 'copy' as const, loggedAt: ts, createdAt: ts, updatedAt: ts };
   });
   return mealEntryRepository.bulkAdd(copies);
 }

@@ -119,6 +119,8 @@ export const mealEntrySchema = z
     grams: finiteNonNeg,
     nutrients: nutrientValuesSchema,
     note: z.string().max(1000).optional(),
+    origin: z.enum(['manual', 'barcode', 'photo_ai', 'recipe', 'copy', 'suggestion']).optional(),
+    photoId: z.string().optional(),
     loggedAt: isoTimestampSchema,
     createdAt: isoTimestampSchema,
     updatedAt: isoTimestampSchema,
@@ -210,3 +212,12 @@ export const backupPayloadSchema = z.object({
 export function formatZodIssues(error: z.ZodError, max = 20): string[] {
   return error.issues.slice(0, max).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
 }
+
+export const aiSettingsSchema = z.object({
+  provider: z.literal('gemini'),
+  apiKey: z.string().trim().min(10).max(200).nullable(),
+  model: z.string().trim().min(1).max(100).regex(/^[a-zA-Z0-9._-]+$/, 'Invalid model id'),
+  photoRecognitionEnabled: z.boolean(),
+  aiSuggestionsEnabled: z.boolean(),
+  consentAcceptedAt: isoTimestampSchema.nullable(),
+});

@@ -156,6 +156,7 @@ export async function logRecipe(recipeId: string, input: LogRecipeInput): Promis
     grams: n.gramsPerServing * servings,
     nutrients: totalsToValues(scaleTotals(n.perServing, servings)),
     ...(input.note ? { note: input.note } : {}),
+    origin: 'recipe',
     loggedAt: now,
     createdAt: now,
     updatedAt: now,

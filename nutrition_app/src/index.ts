@@ -33,4 +33,6 @@ export { seedDatabase, SEED_FOODS, type SeedResult } from './data/seed';
 export { nutrientDefinitionRepository } from './data/repositories';
 export * from './services';
 export { OpenFoodFactsClient, OpenFoodFactsError, normalizeOffProduct, normalizeOffNutrients, type OffClientOptions, type OffErrorCode } from './integrations/openFoodFacts';
+export { GeminiClient, GeminiError, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS, type GeminiErrorCode, type GeminiClientOptions } from './integrations/gemini';
+export { evaluateExternalCandidate, allowedFoodPool, type ExternalCandidate, type ExternalEvaluation } from './core/recommendations';
 export { initializeApp, type InitializeResult } from './init';
