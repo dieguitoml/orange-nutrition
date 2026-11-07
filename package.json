@@ -1,0 +1,9 @@
+{
+  "name": "orange-nutrition-workspace",
+  "private": true,
+  "description": "Runtime dependencies shared by nutrition_app (backend source) when bundled by frontend/. zod is 4.x: 3.25.76 is affected by GHSA-mrhx-c7xc-m3w5 (fixed in 4.6.6).",
+  "dependencies": {
+    "dexie": "4.4.7",
+    "zod": "4.6.7"
+  }
+}

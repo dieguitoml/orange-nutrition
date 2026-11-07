@@ -1,0 +1,55 @@
+{
+  "name": "orange-nutrition-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "preview": "vite preview",
+    "icons": "pwa-assets-generator --preset minimal-2023 public/logo.svg"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.1.1",
+    "@hookform/resolvers": "^7.0.3",
+    "@radix-ui/react-collapsible": "^1.1.2",
+    "@radix-ui/react-dialog": "^1.1.4",
+    "@radix-ui/react-slot": "^1.1.1",
+    "@tanstack/react-query": "5.106.1",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^1.70.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-hook-form": "^7.66.0",
+    "react-router-dom": "^7.18.5",
+    "recharts": "^3.10.1",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^2.6.0",
+    "vaul": "^1.1.2",
+    "zod": "^4.6.7",
+    "react-is": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vite-pwa/assets-generator": "^2.0.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.6",
+    "vite-plugin-pwa": "^2.0.0",
+    "workbox-window": "^7.4.1"
+  },
+  "overrides": {
+    "glob": "^14.0.2",
+    "minimatch": "^11.0.1",
+    "@tanstack/query-core": "5.106.1"
+  }
+}

@@ -1,0 +1,452 @@
+import * as Collapsible from '@radix-ui/react-collapsible'
+import { ChevronDown, Download, Monitor, Moon, Share, Sun, Upload, X } from 'lucide-react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { toast } from 'sonner'
+import { REFERENCE_PROFILES, type ReferenceProfileId } from '@/core/references'
+import { ALLERGENS, NUTRIENTS, type BackupValidation, type Goals, type MicronutrientKey, type Preferences, type ThemePreference } from '@/core/types'
+import { PageHeader } from '@/components/PageHeader'
+import { ErrorState, LoadingState } from '@/components/States'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/ui/dialog'
+import { FieldError, Input, Label } from '@/components/ui/input'
+import { SegmentedControl } from '@/components/ui/segmented'
+import { cn } from '@/lib/utils'
+import { api } from '@/services'
+import { useGoals, useImportBackup, usePreferences, useUpdateGoals, useUpdatePreferences } from '@/services/queries'
+
+export function SettingsScreen() {
+  const goals = useGoals()
+  const prefs = usePreferences()
+  return (
+    <div className="animate-fade-up pb-4">
+      <PageHeader title="Settings" back />
+      {goals.isError || prefs.isError ? (
+        <ErrorState error={goals.error ?? prefs.error} onRetry={() => (goals.refetch(), prefs.refetch())} />
+      ) : !goals.data || !prefs.data ? (
+        <LoadingState rows={5} />
+      ) : (
+        <div className="space-y-6">
+          <TargetsSection goals={goals.data} />
+          <MicroTargetsSection goals={goals.data} />
+          <PreferencesSection prefs={prefs.data} />
+          <ThemeSection prefs={prefs.data} />
+          <DataSection />
+          <InstallSection />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Group({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section>
+      <h2 className="px-1 text-[13px] font-semibold uppercase tracking-wide text-muted">{title}</h2>
+      {description && <p className="mb-2 mt-0.5 px-1 text-[13px] text-muted">{description}</p>}
+      <Card className={cn('space-y-4', !description && 'mt-2')}>{children}</Card>
+    </section>
+  )
+}
+
+const MACRO_FIELDS: { key: keyof Omit<Goals, 'micros'>; label: string; unit: string; max: number }[] = [
+  { key: 'calories', label: 'Calories', unit: 'kcal', max: 10000 },
+  { key: 'protein', label: 'Protein', unit: 'g', max: 600 },
+  { key: 'carbs', label: 'Carbohydrates', unit: 'g', max: 1000 },
+  { key: 'fat', label: 'Fat', unit: 'g', max: 500 },
+  { key: 'fiber', label: 'Fiber', unit: 'g', max: 150 },
+]
+
+function TargetsSection({ goals }: { goals: Goals }) {
+  const update = useUpdateGoals()
+  const [values, setValues] = useState(() => Object.fromEntries(MACRO_FIELDS.map((f) => [f.key, String(goals[f.key])])) as Record<string, string>)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const dirty = MACRO_FIELDS.some((f) => values[f.key] !== String(goals[f.key]))
+
+  async function save() {
+    const errs: Record<string, string> = {}
+    for (const f of MACRO_FIELDS) {
+      const n = Number(values[f.key])
+      if (values[f.key].trim() === '' || !Number.isFinite(n)) errs[f.key] = 'Enter a number'
+      else if (n <= 0) errs[f.key] = 'Must be above 0'
+      else if (n > f.max) errs[f.key] = `Must be ${f.max} or less`
+    }
+    setErrors(errs)
+    if (Object.keys(errs).length) return
+    const next = { ...goals, ...Object.fromEntries(MACRO_FIELDS.map((f) => [f.key, Number(values[f.key])])) }
+    try {
+      await update.mutateAsync(next)
+      toast.success('Daily targets saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save')
+    }
+  }
+
+  return (
+    <Group title="Daily targets">
+      <div className="grid grid-cols-2 gap-3">
+        {MACRO_FIELDS.map((f) => (
+          <div key={f.key} className={cn('space-y-1.5', f.key === 'calories' && 'col-span-2')}>
+            <Label htmlFor={`goal-${f.key}`}>{f.label}</Label>
+            <div className="relative">
+              <Input
+                id={`goal-${f.key}`}
+                inputMode="decimal"
+                value={values[f.key]}
+                aria-invalid={!!errors[f.key]}
+                className="pr-14"
+                onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+              />
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-muted">{f.unit}</span>
+            </div>
+            <FieldError>{errors[f.key]}</FieldError>
+          </div>
+        ))}
+      </div>
+      <Button className="w-full" disabled={!dirty || update.isPending} onClick={save}>
+        Save targets
+      </Button>
+    </Group>
+  )
+}
+
+function MicroTargetsSection({ goals }: { goals: Goals }) {
+  const update = useUpdateGoals()
+  const keys = Object.keys(NUTRIENTS) as MicronutrientKey[]
+  const [values, setValues] = useState(() => Object.fromEntries(keys.map((k) => [k, goals.micros[k] !== undefined ? String(goals.micros[k]) : ''])) as Record<string, string>)
+  const [error, setError] = useState<string>()
+
+  async function save() {
+    const micros: Goals['micros'] = {}
+    for (const k of keys) {
+      const v = values[k].trim()
+      if (v === '') continue
+      const n = Number(v)
+      if (!Number.isFinite(n) || n < 0) {
+        setError(`${NUTRIENTS[k].label} must be a number of 0 or more`)
+        return
+      }
+      micros[k] = n
+    }
+    setError(undefined)
+    try {
+      await update.mutateAsync({ ...goals, micros })
+      toast.success('Micronutrient targets saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save')
+    }
+  }
+
+  return (
+    <section>
+      <Collapsible.Root>
+        <Card className="p-0">
+          <Collapsible.Trigger className="group flex min-h-16 w-full items-center justify-between px-5 py-3 text-left">
+            <span>
+              <span className="block text-[15px] font-semibold">Micronutrient targets</span>
+              <span className="block text-[12.5px] text-muted">Spanish reference intakes (AESAN 2019) by age and sex. Leave blank to remove a target.</span>
+            </span>
+            <ChevronDown className="size-5 shrink-0 text-muted transition group-data-[state=open]:rotate-180" />
+          </Collapsible.Trigger>
+          <Collapsible.Content className="space-y-4 px-5 pb-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="ref-profile">Fill from AESAN reference profile</Label>
+              <select
+                id="ref-profile"
+                defaultValue=""
+                onChange={(e) => {
+                  const p = REFERENCE_PROFILES.find((x) => x.id === (e.target.value as ReferenceProfileId))
+                  if (!p) return
+                  setValues(Object.fromEntries(keys.map((k) => [k, p.micros[k] !== undefined ? String(p.micros[k]) : ''])) as Record<string, string>)
+                  toast(`${p.label} values filled in — tap Save to apply`)
+                }}
+                className="h-12 w-full rounded-2xl border border-border bg-surface px-4 text-base text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+              >
+                <option value="" disabled>
+                  Choose age and sex…
+                </option>
+                {REFERENCE_PROFILES.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[12px] text-muted">Limits: sodium 2 g (EFSA), sugars 90 g and saturates 20 g (EU reference intakes).</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {keys.map((k) => (
+                <div key={k} className="space-y-1.5">
+                  <Label htmlFor={`micro-${k}`}>
+                    {NUTRIENTS[k].label}
+                    {NUTRIENTS[k].isLimit ? ' (limit)' : ''}
+                  </Label>
+                  <div className="relative">
+                    <Input id={`micro-${k}`} inputMode="decimal" className="pr-11" value={values[k]} onChange={(e) => setValues({ ...values, [k]: e.target.value })} />
+                    <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-muted">{NUTRIENTS[k].unit}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <FieldError>{error}</FieldError>
+            <Button className="w-full" disabled={update.isPending} onClick={save}>
+              Save micronutrient targets
+            </Button>
+          </Collapsible.Content>
+        </Card>
+      </Collapsible.Root>
+    </section>
+  )
+}
+
+const DIETS = ['Vegetarian', 'Vegan', 'Pescatarian', 'Gluten-free', 'Dairy-free']
+
+function PreferencesSection({ prefs }: { prefs: Preferences }) {
+  const update = useUpdatePreferences()
+  const [draft, setDraft] = useState(prefs)
+  useEffect(() => {
+    setDraft((d) => ({ ...d, theme: prefs.theme }))
+  }, [prefs.theme])
+  const dirty = JSON.stringify({ ...draft, theme: null }) !== JSON.stringify({ ...prefs, theme: null })
+
+  const toggleDiet = (d: string) => {
+    const k = d.toLowerCase()
+    setDraft({ ...draft, dietary: draft.dietary.includes(k) ? draft.dietary.filter((x) => x !== k) : [...draft.dietary, k] })
+  }
+
+  return (
+    <Group title="Food preferences" description="Used to filter recommendations.">
+      <div className="space-y-1.5">
+        <Label htmlFor="pref-name">Your name (for the greeting)</Label>
+        <Input id="pref-name" value={draft.displayName ?? ''} maxLength={30} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} />
+      </div>
+      <div>
+        <p className="mb-2 text-[13px] font-medium text-muted">Dietary preferences</p>
+        <div className="flex flex-wrap gap-2">
+          {DIETS.map((d) => {
+            const on = draft.dietary.includes(d.toLowerCase())
+            return (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleDiet(d)}
+                className={cn(
+                  'h-10 rounded-full border px-4 text-[13px] font-medium transition',
+                  on ? 'border-accent bg-accent text-white dark:text-background' : 'border-border bg-surface',
+                )}
+              >
+                {d}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div>
+        <p className="mb-1 text-[13px] font-medium text-muted">Allergies</p>
+        <p className="mb-2 text-[12px] text-muted">The 14 EU allergens. Foods without confirmed allergen info are excluded while any is selected.</p>
+        <div className="flex flex-wrap gap-2">
+          {ALLERGENS.map((a) => {
+            const on = draft.allergies.includes(a.id)
+            return (
+              <button
+                key={a.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  setDraft({ ...draft, allergies: on ? draft.allergies.filter((x) => x !== a.id) : [...draft.allergies, a.id] })
+                }
+                className={cn(
+                  'h-10 rounded-full border px-4 text-[13px] font-medium transition',
+                  on ? 'border-danger bg-danger text-white' : 'border-border bg-surface',
+                )}
+              >
+                {a.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <ChipInput label="Disliked foods" placeholder="e.g. olives" values={draft.dislikedFoods} onChange={(dislikedFoods) => setDraft({ ...draft, dislikedFoods })} />
+      <Button
+        className="w-full"
+        disabled={!dirty || update.isPending}
+        onClick={async () => {
+          try {
+            await update.mutateAsync({ ...draft, displayName: draft.displayName?.trim() || undefined })
+            toast.success('Preferences saved')
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Could not save')
+          }
+        }}
+      >
+        Save preferences
+      </Button>
+    </Group>
+  )
+}
+
+function ChipInput({ label, placeholder, values, onChange }: { label: string; placeholder: string; values: string[]; onChange: (v: string[]) => void }) {
+  const [text, setText] = useState('')
+  const id = `chip-${label.replace(/\s/g, '-').toLowerCase()}`
+  const add = () => {
+    const v = text.trim().toLowerCase()
+    if (v && !values.includes(v)) onChange([...values, v])
+    setText('')
+  }
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      add()
+    }
+  }
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex gap-2">
+        <Input id={id} placeholder={placeholder} value={text} enterKeyHint="done" onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
+        <Button variant="soft" onClick={add} disabled={!text.trim()}>
+          Add
+        </Button>
+      </div>
+      {values.length > 0 && (
+        <ul className="flex flex-wrap gap-2 pt-1">
+          {values.map((v) => (
+            <li key={v} className="flex h-9 items-center gap-1 rounded-full bg-surface-2 pl-3.5 text-[13px] font-medium">
+              {v}
+              <button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((x) => x !== v))} className="grid size-9 place-items-center text-muted">
+                <X className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ThemeSection({ prefs }: { prefs: Preferences }) {
+  const update = useUpdatePreferences()
+  return (
+    <Group title="Appearance">
+      <SegmentedControl<ThemePreference>
+        label="Theme"
+        value={prefs.theme}
+        onChange={(theme) => update.mutate({ ...prefs, theme }, { onSuccess: () => toast.success('Theme updated') })}
+        options={[
+          { value: 'system', label: 'System', icon: <Monitor className="size-4" /> },
+          { value: 'light', label: 'Light', icon: <Sun className="size-4" /> },
+          { value: 'dark', label: 'Dark', icon: <Moon className="size-4" /> },
+        ]}
+      />
+    </Group>
+  )
+}
+
+function DataSection() {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [pending, setPending] = useState<{ file: unknown; v: BackupValidation } | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const importer = useImportBackup()
+
+  async function doExport() {
+    setExporting(true)
+    try {
+      const { json, filename } = await api.backup.export()
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast.success('Backup exported')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    try {
+      const parsed = JSON.parse(await f.text())
+      const v = await api.backup.validate(parsed)
+      if (!v.ok) {
+        toast.error(v.error ?? 'Invalid backup file')
+        return
+      }
+      setPending({ file: parsed, v })
+    } catch {
+      toast.error("That file isn't valid JSON")
+    }
+  }
+
+  return (
+    <Group title="Your data" description="Everything is stored only on this device. Export a backup to keep it safe or move it to another device.">
+      <div className="grid grid-cols-2 gap-3">
+        <Button variant="outline" onClick={doExport} disabled={exporting}>
+          <Download className="size-4" /> Export
+        </Button>
+        <Button variant="outline" onClick={() => fileRef.current?.click()}>
+          <Upload className="size-4" /> Import
+        </Button>
+      </div>
+      <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={onFile} />
+      <ConfirmDialog
+        open={!!pending}
+        onOpenChange={(o) => !o && setPending(null)}
+        title="Replace all data?"
+        description={
+          pending?.v.summary
+            ? `This backup from ${new Date(pending.v.summary.exportedAt).toLocaleDateString()} has ${pending.v.summary.entries} diary entries, ${pending.v.summary.foods} custom foods and ${pending.v.summary.recipes} recipes. Your current data on this device will be replaced.`
+            : 'Your current data on this device will be replaced.'
+        }
+        confirmLabel="Import"
+        destructive
+        busy={importer.isPending}
+        onConfirm={async () => {
+          try {
+            await importer.mutateAsync(pending!.file)
+            toast.success('Backup imported')
+            setPending(null)
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Import failed')
+          }
+        }}
+      />
+    </Group>
+  )
+}
+
+function InstallSection() {
+  const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone)
+  return (
+    <Group title="Install on iPhone">
+      {standalone ? (
+        <p className="text-[15px]">You're using Nourish as an installed app.</p>
+      ) : (
+        <ol className="space-y-2.5 text-[15px]">
+          {[
+            'Open this page in Safari.',
+            <>
+              Tap <Share className="inline size-4 -translate-y-0.5" /> Share.
+            </>,
+            'Choose “Add to Home Screen”.',
+            'Make sure “Open as Web App” is on.',
+            'Tap Add.',
+          ].map((s, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-soft text-[12px] font-semibold text-accent">{i + 1}</span>
+              <span>{s}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Group>
+  )
+}

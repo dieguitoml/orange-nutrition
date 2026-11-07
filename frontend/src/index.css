@@ -1,0 +1,146 @@
+@import 'tailwindcss';
+
+/* Inter (variable), self-hosted for offline use — Latin subsets only to keep the precache small. */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('../node_modules/@fontsource-variable/inter/files/inter-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #faf9f6;
+  --surface: #ffffff;
+  --surface-2: #f3f4f0;
+  --primary: #6f9276;
+  --primary-foreground: #ffffff;
+  --accent: #315c42;
+  --soft: #eaf2e9;
+  --foreground: #252a26;
+  --muted: #7b827c;
+  --border: #e8ebe6;
+  --danger: #b5594a;
+  --warning: #c08a3e;
+
+  --protein: #c47f68;
+  --carbs: #d1a85f;
+  --fat: #7c97b3;
+  --fiber: #7fa483;
+  --track: #eef0ec;
+
+  --nav-height: 64px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;
+}
+
+.dark {
+  --background: #131714;
+  --surface: #1c211d;
+  --surface-2: #242a25;
+  --primary: #86aa8d;
+  --primary-foreground: #0f1410;
+  --accent: #a9cdb1;
+  --soft: #223026;
+  --foreground: #eef1ec;
+  --muted: #98a099;
+  --border: #2c332d;
+  --danger: #d6806f;
+  --warning: #d8a95f;
+
+  --protein: #d4937d;
+  --carbs: #dbb978;
+  --fat: #93abc5;
+  --fiber: #93b897;
+  --track: #2a312b;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-soft: var(--soft);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-protein: var(--protein);
+  --color-carbs: var(--carbs);
+  --color-fat: var(--fat);
+  --color-fiber: var(--fiber);
+  --color-track: var(--track);
+  --radius-card: 1.375rem;
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-scan: scan 2.2s ease-in-out infinite;
+  --animate-fade-up: fade-up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes scan {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(calc(var(--scan-h, 160px) - 2px)); }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@layer base {
+  * { border-color: var(--border); }
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    background: var(--background);
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    overscroll-behavior-y: none;
+    min-height: 100dvh;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  #root { min-height: 100dvh; }
+  /* iOS zooms into inputs with font-size < 16px. */
+  input, select, textarea { font-size: 16px; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 10px; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .hatched {
+    background-image: repeating-linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--muted) 45%, transparent) 0 4px,
+      transparent 4px 8px
+    );
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
