@@ -139,7 +139,7 @@ AI is **off by default**. To turn it on: (1) the user pastes their own free key 
 | `AI_PRIVACY_NOTICE` | Text to show before enabling (what is sent, Google free-tier data use). |
 | `setAiApiKey(key \| null)` | Save or remove the key. Returns `AiSettingsPublic` (never contains the key; `apiKeyHint` like `…x9Qk`). |
 | `acceptAiPrivacyNotice()` / `revokeAiConsent(forgetKey?)` | Consent with timestamp. Revoking turns every AI feature off. |
-| `updateAiSettings({ photoRecognitionEnabled?, aiSuggestionsEnabled?, model? })` | Throws `VALIDATION` if there's no key or no consent. Default model: `gemini-3.8-flash` (newest free-tier Flash), falling back automatically to `gemini-3.5-flash`, then the Lite models, if a model is retired or overloaded. Settings saved with retired models (`gemini-flash-latest`, `gemini-2.5-flash`…) are migrated automatically. |
+| `updateAiSettings({ photoRecognitionEnabled?, aiSuggestionsEnabled?, model? })` | Throws `VALIDATION` if there's no key or no consent. Default model: `gemini-3.5-flash`, the most reliable free-tier Flash in live tests (Pro models are paid-only). If a model is retired, overloaded or hangs, it falls back automatically to `gemini-3.5-flash-lite`, then `gemini-3.8-flash`, then `gemini-3.1-flash-lite`, within a ~40 s total budget. Settings saved with retired models (`gemini-flash-latest`, `gemini-2.5-flash`…) are migrated automatically. |
 | `getAiSettingsPublic()` | `{ hasApiKey, apiKeyHint, photoRecognitionAvailable, aiSuggestionsAvailable, model, consentAcceptedAt, ... }`. |
 | `testAiConnection()` | `{ ok: true, model }` or `{ ok: false, code, message }` (`INVALID_KEY`, `RATE_LIMITED`, `NO_CONSENT`…). |
 

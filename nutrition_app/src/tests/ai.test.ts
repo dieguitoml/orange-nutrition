@@ -109,6 +109,17 @@ describe('Gemini client', () => {
     expect(body.input[1]).toEqual({ type: 'image', data: 'AAAA', mime_type: 'image/jpeg' });
   });
 
+  it('moves on to the next model when one hangs', async () => {
+    const fetchImpl = (_: unknown, init?: RequestInit) => {
+      const m = JSON.parse(init!.body as string).model;
+      if (m === 'slow') return new Promise<Response>((_, rej) => init?.signal?.addEventListener('abort', () => rej(new Error('aborted'))));
+      return Promise.resolve(gemini({ ok: 2 }));
+    };
+    const c = new GeminiClient({ apiKey: KEY, model: 'slow', fallbackModels: ['fast'], timeoutMs: 10, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(await c.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).toEqual({ ok: 2 });
+    expect(c.lastModel).toBe('fast');
+  });
+
   it('times out', async () => {
     const fetchImpl = (_: unknown, init?: RequestInit) => new Promise<Response>((_, rej) => init?.signal?.addEventListener('abort', () => rej(new Error('aborted'))));
     const c = new GeminiClient({ apiKey: KEY, model: 'm', timeoutMs: 10, fetchImpl: fetchImpl as unknown as typeof fetch });

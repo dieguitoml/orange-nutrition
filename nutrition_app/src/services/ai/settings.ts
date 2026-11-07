@@ -107,7 +107,7 @@ export async function testAiConnection(): Promise<{ ok: true; model: string } | 
   const s = await getAiSettings();
   if (!s.apiKey) return { ok: false, code: 'NO_KEY', message: 'No API key configured' };
   if (!s.consentAcceptedAt) return { ok: false, code: 'NO_CONSENT', message: 'Accept the AI privacy notice first' };
-  const client = new GeminiClient({ apiKey: s.apiKey, model: s.model, timeoutMs: 15_000, ...(fetchOverride ? { fetchImpl: fetchOverride } : {}) });
+  const client = new GeminiClient({ apiKey: s.apiKey, model: s.model, timeoutMs: 25_000, ...(fetchOverride ? { fetchImpl: fetchOverride } : {}) });
   try {
     await client.generateJson({ system: 'Reply with {"ok": true}.', parts: [{ text: 'ping' }], schema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } }, required: ['ok'] }, maxOutputTokens: 1024 });
     return { ok: true, model: client.lastModel ?? s.model };

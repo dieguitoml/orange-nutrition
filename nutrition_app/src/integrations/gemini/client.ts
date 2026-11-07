@@ -79,9 +79,14 @@ export interface GeminiClientOptions {
   now?: () => number;
 }
 
-/** Newest Flash model available on the free tier (Pro models have a free-tier limit of 0). */
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
-export const GEMINI_FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+/**
+ * Free-tier Flash model with the most reliable latency (~3–10 s) in live tests (Nov 2026).
+ * Pro models have a free-tier limit of 0. gemini-3.8-flash is newer but was frequently slow/timing out.
+ */
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+export const GEMINI_FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+/** Total time budget across fallbacks for one request. */
+const TOTAL_BUDGET_MS = 40_000;
 /** Models Google no longer serves to new users; stored settings using them are migrated. */
 export const RETIRED_GEMINI_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 export const FREE_TIER_REQUESTS_PER_MINUTE = 5;
@@ -125,6 +130,7 @@ export class GeminiClient {
   /** Sends one interaction and returns the parsed JSON object (unvalidated: callers validate). */
   async generateJson(options: GenerateJsonOptions): Promise<unknown> {
     const models = [this.opts.model, ...this.opts.fallbackModels.filter((m) => m !== this.opts.model)];
+    const started = this.opts.now();
     let lastErr: GeminiError | null = null;
     for (const model of models) {
       try {
@@ -132,12 +138,11 @@ export class GeminiClient {
         this.lastModel = model;
         return out;
       } catch (e) {
-        // Retired/unknown model or sustained overload → try the next model.
-        if (e instanceof GeminiError && (e.code === 'MODEL_NOT_FOUND' || e.code === 'OVERLOADED')) {
-          lastErr = e;
-          continue;
-        }
-        throw e;
+        // Retired/unknown model, sustained overload or a hung model → try the next one (within budget).
+        const retryable = e instanceof GeminiError && (e.code === 'MODEL_NOT_FOUND' || e.code === 'OVERLOADED' || e.code === 'TIMEOUT');
+        if (!retryable) throw e;
+        lastErr = e as GeminiError;
+        if ((e as GeminiError).code === 'TIMEOUT' && this.opts.now() - started > TOTAL_BUDGET_MS - this.opts.timeoutMs) break;
       }
     }
     throw lastErr ?? new GeminiError('MODEL_NOT_FOUND', 'No available Gemini model');
