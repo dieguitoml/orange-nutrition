@@ -1,5 +1,5 @@
 import * as Collapsible from '@radix-ui/react-collapsible'
-import { ChevronDown, Info, Leaf } from 'lucide-react'
+import { ChevronDown, Info } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { NUTRIENTS, type Food, type MicronutrientKey, type NutrientCoverage, type NutrientGroup } from '@/core/types'
@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { FoodListItem } from '@/components/food/FoodListItem'
 import { FoodDetailSheet } from '@/components/food/FoodDetailSheet'
+import { foodEmoji } from '@/lib/emoji'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Sheet } from '@/components/ui/sheet'
@@ -18,10 +19,10 @@ import { nutrientAmount, percent } from '@/lib/format'
 import { useSelectedDate } from '@/lib/selectedDate'
 import { useDaySummary, useNutrientDetail, useNutrientReport } from '@/services/queries'
 
-const GROUPS: { key: NutrientGroup; label: string }[] = [
-  { key: 'vitamins', label: 'Vitamins' },
-  { key: 'minerals', label: 'Minerals' },
-  { key: 'other', label: 'Sugars, fats & cholesterol' },
+const GROUPS: { key: NutrientGroup; label: string; emoji: string; tint: string }[] = [
+  { key: 'vitamins', label: 'Vitamins', emoji: '🍊', tint: 'bg-meal-breakfast' },
+  { key: 'minerals', label: 'Minerals', emoji: '⚡', tint: 'bg-meal-dinner' },
+  { key: 'other', label: 'Sugars & fats', emoji: '🍬', tint: 'bg-meal-lunch' },
 ]
 
 export function NutrientsScreen() {
@@ -38,7 +39,7 @@ export function NutrientsScreen() {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Nutrients" eyebrow={relativeDayLabel(date)} />
+      <PageHeader title="Nutrients" emoji="🥦" eyebrow={relativeDayLabel(date)} />
       {report.isError ? (
         <ErrorState error={report.error} onRetry={() => report.refetch()} />
       ) : !report.data ? (
@@ -46,7 +47,7 @@ export function NutrientsScreen() {
       ) : report.data.entryCount === 0 ? (
         <Card>
           <EmptyState
-            icon={<Leaf className="size-5" />}
+            emoji="🥦"
             title="No foods logged for this day"
             message="Vitamins and minerals appear here as you log meals."
             action={<Button onClick={() => navigate('/add')}>Log food</Button>}
@@ -57,9 +58,9 @@ export function NutrientsScreen() {
           <Card>
             <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">Coverage</h2>
             <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-              <Summary value={count('on-track') + count('high')} label="Met" tone="text-accent" />
-              <Summary value={count('low')} label="Below target" tone="text-warning" />
-              <Summary value={count('incomplete') + count('no-data')} label="Not enough data" tone="text-muted" />
+              <Summary emoji="✅" value={count('on-track')} label="On track" tone="text-sage" bg="bg-sage-soft" />
+              <Summary emoji="📉" value={count('low')} label="Below target" tone="text-warning" bg="bg-meal-lunch" />
+              <Summary emoji="❔" value={count('incomplete') + count('no-data')} label="Not enough data" tone="text-muted" bg="bg-surface-2" />
             </div>
             <p className="mt-4 flex gap-2 rounded-2xl bg-surface-2/70 p-3 text-[12.5px] leading-relaxed text-muted">
               <Info className="mt-0.5 size-3.5 shrink-0" />
@@ -73,7 +74,7 @@ export function NutrientsScreen() {
           </Card>
 
           {GROUPS.map((g) => (
-            <NutrientGroupCard key={g.key} label={g.label} items={byGroup(g.key)} onSelect={setSelected} defaultOpen={g.key !== 'other'} />
+            <NutrientGroupCard key={g.key} label={g.label} emoji={g.emoji} tint={g.tint} items={byGroup(g.key)} onSelect={setSelected} defaultOpen={g.key !== 'other'} />
           ))}
           <Legend />
         </div>
@@ -92,9 +93,10 @@ export function NutrientsScreen() {
   )
 }
 
-function Summary({ value, label, tone }: { value: number; label: string; tone: string }) {
+function Summary({ emoji, value, label, tone, bg }: { emoji: string; value: number; label: string; tone: string; bg: string }) {
   return (
-    <div className="rounded-2xl bg-surface-2/70 px-2 py-3">
+    <div className={`rounded-2xl px-2 py-3 ${bg}`}>
+      <span aria-hidden className="emoji mb-1 block text-[18px]">{emoji}</span>
       <p className={`tabular text-[24px] font-semibold leading-none ${tone}`}>{value}</p>
       <p className="mt-1.5 text-[11.5px] font-medium text-muted">{label}</p>
     </div>
@@ -103,11 +105,15 @@ function Summary({ value, label, tone }: { value: number; label: string; tone: s
 
 function NutrientGroupCard({
   label,
+  emoji,
+  tint,
   items,
   onSelect,
   defaultOpen,
 }: {
   label: string
+  emoji: string
+  tint: string
   items: NutrientCoverage[]
   onSelect: (k: MicronutrientKey) => void
   defaultOpen?: boolean
@@ -116,8 +122,11 @@ function NutrientGroupCard({
   return (
     <Collapsible.Root defaultOpen={defaultOpen}>
       <Card className="p-0">
-        <Collapsible.Trigger className="group flex min-h-14 w-full items-center justify-between px-5 py-3 text-left">
-          <span>
+        <Collapsible.Trigger className="group flex min-h-14 w-full items-center gap-3 px-5 py-3 text-left">
+          <span className={`grid size-10 shrink-0 place-items-center rounded-2xl ${tint}`}>
+            <span aria-hidden className="emoji text-[20px]">{emoji}</span>
+          </span>
+          <span className="flex-1">
             <span className="block text-[16px] font-semibold tracking-tight">{label}</span>
             <span className="block text-[12.5px] text-muted">
               {reported} of {items.length} with data
@@ -140,7 +149,7 @@ function NutrientGroupCard({
 function Legend() {
   return (
     <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 px-2 pb-2 text-[12px] text-muted">
-      <span className="flex items-center gap-2"><span className="h-2 w-6 rounded-full bg-primary" />Confirmed</span>
+      <span className="flex items-center gap-2"><span className="h-2 w-6 rounded-full bg-fiber" />Confirmed</span>
       <span className="flex items-center gap-2"><span className="hatched h-2 w-6 rounded-full" />Partial data</span>
       <span className="flex items-center gap-2"><span className="h-2 w-6 rounded-full border border-dashed border-muted/50" />No data</span>
     </div>
@@ -216,6 +225,7 @@ function NutrientDetailSheet({
                 {d.suggestions.map((f) => (
                   <li key={f.id}>
                     <FoodListItem
+                      emoji={foodEmoji(f.name, f.category)}
                       name={f.name}
                       detail={`${nutrientAmount(f.per100g.micros[d.info.key] ?? 0, d.info.unit)} per 100 g`}
                       calories={f.per100g.calories}

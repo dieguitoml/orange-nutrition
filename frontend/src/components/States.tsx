@@ -7,12 +7,14 @@ import { cn } from '@/lib/utils'
 
 export function EmptyState({
   icon,
+  emoji,
   title,
   message,
   action,
   className,
 }: {
   icon?: ReactNode
+  emoji?: string
   title: string
   message?: string
   action?: ReactNode
@@ -20,7 +22,13 @@ export function EmptyState({
 }) {
   return (
     <div className={cn('flex flex-col items-center px-6 py-8 text-center', className)}>
-      {icon && <div className="mb-3 grid size-12 place-items-center rounded-full bg-soft text-accent">{icon}</div>}
+      {emoji ? (
+        <div className="mb-3 grid size-16 place-items-center rounded-3xl bg-soft">
+          <span aria-hidden className="emoji text-[32px]">{emoji}</span>
+        </div>
+      ) : (
+        icon && <div className="mb-3 grid size-12 place-items-center rounded-full bg-soft text-accent">{icon}</div>
+      )}
       <p className="text-[15px] font-semibold">{title}</p>
       {message && <p className="mt-1 max-w-[30ch] text-sm leading-relaxed text-muted">{message}</p>}
       {action && <div className="mt-4">{action}</div>}

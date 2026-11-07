@@ -21,24 +21,32 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #faf9f6;
+  --background: #fff9f3;
   --surface: #ffffff;
-  --surface-2: #f3f4f0;
-  --primary: #6f9276;
+  --surface-2: #fff2e6;
+  --primary: #f07f2e;
+  --primary-2: #ffb648;
   --primary-foreground: #ffffff;
-  --accent: #315c42;
-  --soft: #eaf2e9;
-  --foreground: #252a26;
-  --muted: #7b827c;
-  --border: #e8ebe6;
-  --danger: #b5594a;
-  --warning: #c08a3e;
+  --accent: #c24e10;
+  --soft: #ffeadb;
+  --sage: #357c4f;
+  --sage-soft: #e3f3e7;
+  --foreground: #2b2420;
+  --muted: #7a6a5f;
+  --border: #f2e4d6;
+  --danger: #c2413a;
+  --warning: #b86e00;
 
-  --protein: #c47f68;
-  --carbs: #d1a85f;
-  --fat: #7c97b3;
-  --fiber: #7fa483;
-  --track: #eef0ec;
+  --protein: #ff7a6b;
+  --carbs: #ffb648;
+  --fat: #4fa8e8;
+  --fiber: #5dbb7a;
+  --track: #f7ebe0;
+
+  --meal-breakfast: #ffe6d3;
+  --meal-lunch: #fff1bf;
+  --meal-dinner: #ece5ff;
+  --meal-snacks: #d9f4e5;
 
   --nav-height: 64px;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -47,24 +55,32 @@
 }
 
 .dark {
-  --background: #131714;
-  --surface: #1c211d;
-  --surface-2: #242a25;
-  --primary: #86aa8d;
-  --primary-foreground: #0f1410;
-  --accent: #a9cdb1;
-  --soft: #223026;
-  --foreground: #eef1ec;
-  --muted: #98a099;
-  --border: #2c332d;
-  --danger: #d6806f;
-  --warning: #d8a95f;
+  --background: #17120f;
+  --surface: #211a16;
+  --surface-2: #2b221d;
+  --primary: #f79a4d;
+  --primary-2: #ffc36b;
+  --primary-foreground: #1f1208;
+  --accent: #f79a4d;
+  --soft: #3a2619;
+  --sage: #7fcf98;
+  --sage-soft: #1f3326;
+  --foreground: #f6ede6;
+  --muted: #b3a296;
+  --border: #3a2e27;
+  --danger: #f08a80;
+  --warning: #f2b45c;
 
-  --protein: #d4937d;
-  --carbs: #dbb978;
-  --fat: #93abc5;
-  --fiber: #93b897;
-  --track: #2a312b;
+  --protein: #ff9182;
+  --carbs: #ffc36b;
+  --fat: #6cb8ee;
+  --fiber: #78cc92;
+  --track: #33281f;
+
+  --meal-breakfast: #45291a;
+  --meal-lunch: #423818;
+  --meal-dinner: #2f2843;
+  --meal-snacks: #1c3a2a;
   color-scheme: dark;
 }
 
@@ -74,6 +90,13 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-primary: var(--primary);
+  --color-primary-2: var(--primary-2);
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+  --color-meal-breakfast: var(--meal-breakfast);
+  --color-meal-lunch: var(--meal-lunch);
+  --color-meal-dinner: var(--meal-dinner);
+  --color-meal-snacks: var(--meal-snacks);
   --color-primary-foreground: var(--primary-foreground);
   --color-accent: var(--accent);
   --color-soft: var(--soft);
@@ -132,6 +155,8 @@
       transparent 4px 8px
     );
   }
+  .emoji { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; line-height: 1; }
+  .bg-brand-gradient { background-image: linear-gradient(135deg, var(--primary-2), var(--primary)); }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { scrollbar-width: none; }
 }

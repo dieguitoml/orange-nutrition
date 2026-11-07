@@ -16,7 +16,7 @@ const STATUS_CLASS: Record<NutrientStatus, string> = {
   'no-data': 'text-muted',
   incomplete: 'text-muted',
   low: 'text-warning',
-  'on-track': 'text-accent',
+  'on-track': 'text-sage',
   high: 'text-danger',
 }
 
@@ -45,7 +45,7 @@ export function NutrientProgress({
   const pct = coverage.percentOfTarget
   const width = pct === null ? 0 : Math.min(pct, 100)
   const confirmed = status === 'low' || status === 'on-track' || status === 'high'
-  const barColor = status === 'high' ? 'bg-danger/70' : status === 'low' ? 'bg-warning/80' : 'bg-primary'
+  const barColor = status === 'high' ? 'bg-danger/80' : status === 'low' ? 'bg-carbs' : 'bg-fiber'
 
   return (
     <button

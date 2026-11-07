@@ -1,5 +1,6 @@
 import { grams } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { Emoji, MACRO_EMOJI } from '@/lib/emoji'
 
 export type MacroTone = 'protein' | 'carbs' | 'fat' | 'fiber'
 
@@ -35,13 +36,20 @@ export function MacroProgressBar({
   compact?: boolean
 }) {
   const remaining = target - consumed
+  // Protein and fiber are "at least" goals: going past them is good news, not "over".
+  const isMinimum = tone === 'protein' || tone === 'fiber'
+  const status =
+    remaining >= 0 ? `${grams(remaining)} g left` : isMinimum ? '🎉 Goal met' : `${grams(-remaining)} g over`
   return (
     <div className="min-w-0">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[13px] font-medium text-muted">{label}</span>
+        <span className="flex items-center gap-1 text-[13px] font-medium text-muted">
+          <Emoji className="text-[14px]">{MACRO_EMOJI[tone]}</Emoji>
+          {label}
+        </span>
         {!compact && (
           <span className="text-[12px] text-muted tabular">
-            {remaining >= 0 ? `${grams(remaining)} g left` : `${grams(-remaining)} g over`}
+            {status}
           </span>
         )}
       </div>
@@ -52,7 +60,7 @@ export function MacroProgressBar({
       <ProgressTrack className="mt-2" ratio={target > 0 ? consumed / target : 0} tone={tone} />
       {compact && (
         <p className="mt-1.5 text-[12px] text-muted tabular">
-          {remaining >= 0 ? `${grams(remaining)} g left` : `${grams(-remaining)} g over`}
+          {status}
         </p>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { ArrowUp, RotateCcw, Settings2, Sparkles } from 'lucide-react'
+import { ArrowUp, RotateCcw, Settings2 } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -87,6 +87,7 @@ export function AssistantScreen() {
     <div className="flex min-h-[calc(100dvh-var(--nav-height)-var(--safe-bottom)-var(--safe-top)-40px)] flex-col">
       <PageHeader
         title="Assistant"
+        emoji="✨"
         subtitle={aiOn ? 'Chat with Gemini about your food, goals and meals' : "Meal ideas from your goals and today's diary"}
         actions={
           messages.length > 0 && (
@@ -101,7 +102,7 @@ export function AssistantScreen() {
         {messages.length === 0 && (
           <div className="animate-fade-up rounded-[var(--radius-card)] bg-soft p-5">
             <div className="flex items-center gap-2 text-accent">
-              <Sparkles className="size-4" />
+              <span aria-hidden className="emoji">🍊</span>
               <p className="text-[13px] font-semibold uppercase tracking-wide">How this works</p>
             </div>
             {aiOn ? (
@@ -206,7 +207,17 @@ export function AssistantScreen() {
   )
 }
 
+const PROMPT_EMOJI: [RegExp, string][] = [
+  [/dinner|lunch|breakfast|eat/i, '🍽️'],
+  [/protein/i, '💪'],
+  [/calorie|kcal/i, '🔥'],
+  [/make with|ingredients/i, '🥚'],
+  [/fiber|fibre/i, '🌾'],
+  [/nutrient|vitamin|week/i, '💊'],
+]
+
 function PromptChip({ text, onClick, disabled }: { text: string; onClick: () => void; disabled?: boolean }) {
+  const emoji = PROMPT_EMOJI.find(([re]) => re.test(text))?.[1]
   return (
     <button
       type="button"
@@ -214,6 +225,7 @@ function PromptChip({ text, onClick, disabled }: { text: string; onClick: () => 
       disabled={disabled}
       className="h-10 shrink-0 rounded-full border border-border bg-surface px-4 text-[13px] font-medium text-foreground transition active:scale-[0.97] disabled:opacity-50"
     >
+      {emoji && <span aria-hidden className="emoji mr-1.5">{emoji}</span>}
       {text}
     </button>
   )
@@ -237,7 +249,7 @@ function RecipeDetailSheet({ rec, onClose, onAdd }: { rec: Recommendation | null
       {rec && (
         <div className="space-y-5 pt-1">
           <NutritionCard nutrition={rec.nutrition} />
-          <p className="rounded-2xl bg-soft px-4 py-3 text-sm leading-relaxed text-accent">{rec.explanation}</p>
+          <p className="rounded-2xl bg-sage-soft px-4 py-3 text-sm leading-relaxed text-sage">{rec.explanation}</p>
           <section>
             <h3 className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-muted">Ingredients</h3>
             <ul className="divide-y divide-border/70">

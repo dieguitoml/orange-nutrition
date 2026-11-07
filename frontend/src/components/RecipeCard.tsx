@@ -1,4 +1,4 @@
-import { ChefHat, Pencil, Trash } from 'lucide-react'
+import { Pencil, Trash } from 'lucide-react'
 import type { Recipe } from '@/core/types'
 import { grams, kcal } from '@/lib/format'
 import { Card } from './ui/card'
@@ -19,8 +19,8 @@ export function RecipeCard({
   return (
     <Card className="space-y-3">
       <div className="flex items-start gap-3">
-        <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-soft text-accent">
-          <ChefHat className="size-5" />
+        <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-meal-dinner">
+          <span aria-hidden className="emoji text-[22px]">👩‍🍳</span>
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[16px] font-semibold tracking-tight">{recipe.name}</h3>

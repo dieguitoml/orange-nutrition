@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 
 export function PageHeader({
   title,
+  emoji,
   subtitle,
   eyebrow,
   actions,
@@ -12,6 +13,8 @@ export function PageHeader({
   className,
 }: {
   title: string
+  /** Decorative emoji shown after the title (hidden from screen readers). */
+  emoji?: string
   subtitle?: ReactNode
   eyebrow?: ReactNode
   actions?: ReactNode
@@ -32,7 +35,14 @@ export function PageHeader({
           </button>
         )}
         {eyebrow && <div className="text-[13px] font-medium text-muted">{eyebrow}</div>}
-        <h1 className="truncate text-[28px] font-semibold leading-tight tracking-tight">{title}</h1>
+        <h1 className="truncate text-[28px] font-semibold leading-tight tracking-tight">
+          {title}
+          {emoji && (
+            <span aria-hidden className="emoji ml-2 text-[26px]">
+              {emoji}
+            </span>
+          )}
+        </h1>
         {subtitle && <div className="mt-0.5 text-sm text-muted">{subtitle}</div>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}

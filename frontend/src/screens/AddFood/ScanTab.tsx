@@ -1,4 +1,5 @@
-import { PackageX, ScanBarcode, WifiOff } from 'lucide-react'
+import { WifiOff } from 'lucide-react'
+import { Emoji, foodEmoji } from '@/lib/emoji'
 import { useState, type FormEvent } from 'react'
 import type { BarcodeResult, Food, MealType } from '@/core/types'
 import { BarcodeScanner } from '@/components/BarcodeScanner'
@@ -46,8 +47,8 @@ export function ScanTab({ meal, date, onCreateCustom }: { meal: MealType; date: 
   return (
     <div className="space-y-4">
       <Card className="flex flex-col items-center py-8 text-center">
-        <div className="grid size-16 place-items-center rounded-full bg-soft text-accent">
-          <ScanBarcode className="size-7" />
+        <div className="grid size-18 place-items-center rounded-3xl bg-linear-to-br from-soft to-meal-lunch">
+          <Emoji className="text-[36px]">📷</Emoji>
         </div>
         <h2 className="mt-4 text-lg font-semibold tracking-tight">Scan a barcode</h2>
         <p className="mt-1 max-w-[30ch] text-sm text-muted">Point your camera at a packaged food's barcode to look up its nutrition.</p>
@@ -93,7 +94,9 @@ export function ScanTab({ meal, date, onCreateCustom }: { meal: MealType; date: 
           <Card className="space-y-4">
             <div>
               <p className="text-[12.5px] font-medium text-muted">Found · {result.food.barcode}</p>
-              <h3 className="text-lg font-semibold tracking-tight">{result.food.name}</h3>
+              <h3 className="text-lg font-semibold tracking-tight">
+                <Emoji>{foodEmoji(result.food.name, result.food.category)}</Emoji> {result.food.name}
+              </h3>
               {result.food.brand && <p className="text-sm text-muted">{result.food.brand}</p>}
             </div>
             <NutritionCard nutrition={result.food.per100g} label="Per 100 g" />
@@ -104,7 +107,7 @@ export function ScanTab({ meal, date, onCreateCustom }: { meal: MealType; date: 
         )}
         {result?.status === 'not_found' && (
           <Card className="flex flex-col items-center py-7 text-center">
-            <PackageX className="size-8 text-muted" />
+            <Emoji className="text-[36px]">🤷</Emoji>
             <p className="mt-3 font-semibold">Product not found</p>
             <p className="mt-1 max-w-[30ch] text-sm text-muted">
               Barcode {result.barcode} isn't in the database yet. You can add it as a custom food.

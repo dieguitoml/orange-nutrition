@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { CalendarDays, ChevronLeft, ChevronRight, Lightbulb, Settings } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { addDays } from 'date-fns'
@@ -19,6 +19,10 @@ import { fromISO, greeting, relativeDayLabel, toISO, todayISO } from '@/lib/date
 import { kcal } from '@/lib/format'
 import { useSelectedDate } from '@/lib/selectedDate'
 import { useDailyInsights, useDaySummary, usePreferences } from '@/services/queries'
+import { Emoji, greetingEmoji } from '@/lib/emoji'
+import type { DailyInsight } from '@/core/types'
+
+const INSIGHT_EMOJI: Record<DailyInsight['kind'], string> = { protein: '💪', fiber: '🌾', calories: '🔥', micronutrient: '💊', general: '👋' }
 
 export function TodayScreen() {
   const { date, setDate } = useSelectedDate()
@@ -40,7 +44,8 @@ export function TodayScreen() {
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-muted">{format(fromISO(date), 'EEEE, MMMM d')}</p>
           <h1 className="mt-0.5 truncate text-[28px] font-semibold leading-tight tracking-tight">
-            {isToday ? `${greeting()}${name ? `, ${name}` : ''}` : relativeDayLabel(date)}
+            {isToday ? `${greeting()}${name ? `, ${name}` : ''}` : relativeDayLabel(date)}{' '}
+            {isToday && <Emoji>{greetingEmoji()}</Emoji>}
           </h1>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -73,11 +78,11 @@ export function TodayScreen() {
         <TodaySkeleton />
       ) : (
         <div className="space-y-4">
-          <Card className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-8">
+          <Card className="flex flex-col items-center gap-5 bg-linear-to-br from-surface via-surface to-soft sm:flex-row sm:items-center sm:gap-8">
             <CalorieProgress consumed={day.data.totals.calories} target={day.data.goals.calories} />
             <div className="grid w-full grid-cols-2 gap-x-4 gap-y-3 sm:flex-1">
-              <Stat label="Eaten" value={kcal(day.data.totals.calories)} unit="kcal" />
-              <Stat label="Target" value={kcal(day.data.goals.calories)} unit="kcal" />
+              <Stat emoji="🍽️" label="Eaten" value={kcal(day.data.totals.calories)} unit="kcal" />
+              <Stat emoji="🎯" label="Target" value={kcal(day.data.goals.calories)} unit="kcal" />
             </div>
           </Card>
 
@@ -94,15 +99,18 @@ export function TodayScreen() {
           </Card>
 
           {insights.data && insights.data.length > 0 && (
-            <Card className="border-transparent bg-soft">
+            <Card className="border-transparent bg-linear-to-br from-soft to-meal-lunch">
               <div className="flex items-center gap-2 text-accent">
-                <Lightbulb className="size-4" />
+                <Emoji className="text-[16px]">💡</Emoji>
                 <h2 className="text-[13px] font-semibold uppercase tracking-wide">Insights</h2>
               </div>
               <ul className="mt-2 space-y-3">
                 {insights.data.map((i) => (
                   <li key={i.id} className="flex items-center justify-between gap-3">
-                    <p className="text-[15px] leading-snug text-foreground">{i.message}</p>
+                    <p className="flex gap-2 text-[15px] leading-snug text-foreground">
+                      <Emoji className="text-[17px]">{INSIGHT_EMOJI[i.kind]}</Emoji>
+                      {i.message}
+                    </p>
                     {i.action && (
                       <Button
                         size="sm"
@@ -142,10 +150,13 @@ export function TodayScreen() {
   )
 }
 
-function Stat({ label, value, unit }: { label: string; value: string; unit: string }) {
+function Stat({ emoji, label, value, unit }: { emoji: string; label: string; value: string; unit: string }) {
   return (
-    <div className="rounded-2xl bg-surface-2/70 px-4 py-3">
-      <p className="text-[12.5px] font-medium text-muted">{label}</p>
+    <div className="rounded-2xl bg-surface/80 px-4 py-3 shadow-[0_1px_2px_rgba(43,36,32,0.05)]">
+      <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-muted">
+        <Emoji className="text-[14px]">{emoji}</Emoji>
+        {label}
+      </p>
       <p className="mt-0.5 tabular text-[20px] font-semibold tracking-tight">
         {value} <span className="text-[13px] font-medium text-muted">{unit}</span>
       </p>

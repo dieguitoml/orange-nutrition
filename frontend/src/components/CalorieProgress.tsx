@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { kcal } from '@/lib/format'
 
 /** Large circular calorie ring. Values come straight from the day summary. */
@@ -9,16 +10,23 @@ export function CalorieProgress({ consumed, target, size = 176 }: { consumed: nu
   const shown = Math.min(ratio, 1)
   const over = ratio > 1
   const remaining = target - consumed
+  const gid = useId()
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" style={{ stopColor: 'var(--primary-2)' }} />
+            <stop offset="100%" style={{ stopColor: 'var(--primary)' }} />
+          </linearGradient>
+        </defs>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={stroke} />
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={over ? 'var(--warning)' : 'var(--primary)'}
+          stroke={over ? 'var(--danger)' : `url(#${gid})`}
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={c}
@@ -31,6 +39,7 @@ export function CalorieProgress({ consumed, target, size = 176 }: { consumed: nu
         role="img"
         aria-label={`${kcal(consumed)} of ${kcal(target)} calories consumed, ${kcal(Math.abs(remaining))} ${remaining >= 0 ? 'remaining' : 'over'}`}
       >
+        <span aria-hidden className="emoji mb-1 text-[22px]">{over ? '😬' : '🔥'}</span>
         <span className="tabular text-[40px] font-semibold leading-none tracking-tight">{kcal(Math.abs(remaining))}</span>
         <span className="mt-1.5 text-[13px] font-medium text-muted">{remaining >= 0 ? 'kcal remaining' : 'kcal over'}</span>
       </div>

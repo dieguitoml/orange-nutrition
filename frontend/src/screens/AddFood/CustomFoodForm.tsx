@@ -126,7 +126,9 @@ export function CustomFoodForm({ meal, date, barcode }: { meal: MealType; date: 
         </div>
       </Card>
       <Card className="space-y-4">
-        <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Per serving</p>
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">
+          <span aria-hidden className="emoji">🧮</span> Per serving
+        </p>
         {field('calories', 'Calories', { unit: 'kcal', numeric: true })}
         <div className="grid grid-cols-2 gap-3">
           {field('protein', 'Protein', { unit: 'g', numeric: true })}
@@ -139,7 +141,9 @@ export function CustomFoodForm({ meal, date, barcode }: { meal: MealType; date: 
         <Card className="p-0">
           <Collapsible.Trigger className="group flex min-h-14 w-full items-center justify-between px-5 text-left">
             <span>
-              <span className="block text-[15px] font-semibold">Micronutrients</span>
+              <span className="block text-[15px] font-semibold">
+                <span aria-hidden className="emoji">💊</span> Micronutrients
+              </span>
               <span className="block text-[12.5px] text-muted">Optional — leave blank if unknown, not 0</span>
             </span>
             <ChevronDown className="size-5 text-muted transition group-data-[state=open]:rotate-180" />

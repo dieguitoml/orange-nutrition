@@ -34,7 +34,7 @@ export function BottomNavigation() {
                 primary ? (
                   <span
                     className={cn(
-                      'grid size-12 place-items-center rounded-full bg-accent text-white shadow-[0_6px_16px_-4px_rgba(49,92,66,0.55)] transition active:scale-95 dark:text-background',
+                      'grid size-13 place-items-center rounded-full bg-brand-gradient text-white shadow-[0_8px_20px_-6px_rgba(240,127,46,0.8)] transition active:scale-95 dark:text-background',
                       isActive && 'ring-4 ring-soft',
                     )}
                   >

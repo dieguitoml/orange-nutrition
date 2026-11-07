@@ -172,11 +172,13 @@ function foodToUI(f: B.Food, isFavorite: boolean): Food {
     servings: servingsToUI(f.servings),
     isFavorite,
     attribution: f.source.attribution,
+    category: f.category,
   }
 }
 
-function entryToUI(e: B.MealEntry): LogEntry {
+function entryToUI(e: B.MealEntry, foods?: ReadonlyMap<string, B.Food>): LogEntry {
   return {
+    category: e.kind === 'recipe' ? 'recipe' : e.foodId ? foods?.get(e.foodId)?.category : undefined,
     id: e.id,
     date: e.date,
     meal: toUIMeal(e.mealType),
@@ -209,6 +211,7 @@ const favoriteIds = async () => new Set((await B.getPreferences()).favoriteFoodI
 // ── summaries ────────────────────────────────────────────────────────────
 async function daySummary(date: ISODate): Promise<DaySummary> {
   const [s, meals] = await Promise.all([B.getDailySummary(date), B.getDailyMeals(date)])
+  const foods = await B.getFoods([...new Set(Object.values(meals).flat().flatMap((e) => (e.foodId ? [e.foodId] : [])))])
   const remaining = Object.fromEntries(
     (Object.keys(MACRO_IDS) as (keyof Macros)[]).map((k) => {
       const id = MACRO_IDS[k]
@@ -224,7 +227,7 @@ async function daySummary(date: ISODate): Promise<DaySummary> {
     meals: Object.fromEntries(
       MEAL_TYPES.map((m): [MealType, MealSummary] => {
         const bm = toBMeal(m)
-        return [m, { meal: m, entries: meals[bm].map(entryToUI), totals: macrosOfTotals(s.byMeal[bm].totals) }]
+        return [m, { meal: m, entries: meals[bm].map((e) => entryToUI(e, foods)), totals: macrosOfTotals(s.byMeal[bm].totals) }]
       }),
     ) as Record<MealType, MealSummary>,
   }
@@ -517,10 +520,62 @@ function aiStatus(s: B.AiSettingsPublic): AiStatus {
     consentAccepted: !!s.consentAcceptedAt,
     assistantEnabled: s.aiSuggestionsEnabled,
     assistantAvailable: s.aiSuggestionsAvailable,
+    photoEnabled: s.photoRecognitionEnabled,
+    photoAvailable: s.photoRecognitionAvailable,
     model: s.model,
     privacyNotice: B.AI_PRIVACY_NOTICE,
   }
 }
+
+const aiErrorMessage = (e: unknown, action: string) => {
+  const code = e instanceof B.DataError ? ((e.details as { code?: string } | undefined)?.code ?? '') : ''
+  return new Error(`${action}: ${AI_ERROR_TEXT[code] ?? (e instanceof Error ? e.message : 'something went wrong')}.`)
+}
+
+const photoService = initialized({
+  async analyze(image: Blob, { meal, hint }: { meal: MealType; hint?: string }) {
+    let r: B.PhotoRecognitionResult
+    try {
+      r = await B.recognizeMealPhoto(image, { mealType: toBMeal(meal), ...(hint?.trim() ? { hint: hint.trim() } : {}) })
+    } catch (e) {
+      throw aiErrorMessage(e, 'Couldn’t analyse the photo')
+    }
+    return {
+      isFood: r.isFood,
+      description: r.description,
+      photoId: r.photoId,
+      model: r.model,
+      items: r.items.map((i) => ({
+        id: i.id,
+        name: i.detected.name,
+        estimatedGrams: i.detected.estimatedGrams,
+        confidence: i.detected.confidence,
+        preparation: i.detected.preparation,
+        matches: i.matches.map((m) => foodToUI(m.food, m.isFavorite)),
+        selectedFoodId: i.selectedFoodId,
+      })),
+    }
+  },
+  async rematch(name: string) {
+    const results = await B.matchDetectedFood({ name, searchTerms: [name], estimatedGrams: 100, confidence: 1 })
+    return results.map((m) => foodToUI(m.food, m.isFavorite))
+  },
+  async totals(items: { foodId: string; grams: number }[]) {
+    const foods = await B.getFoods(items.map((i) => i.foodId))
+    const agg = items.flatMap((i) => {
+      const f = foods.get(i.foodId)
+      return f && i.grams > 0 ? [{ grams: i.grams, nutrients: B.nutrientsForGrams(f, i.grams) }] : []
+    })
+    return macrosOfTotals(B.sumNutrients(agg))
+  },
+  async log({ date, meal, photoId, items }: { date: ISODate; meal: MealType; photoId?: string; items: { foodId: string; grams: number }[] }) {
+    const entries = await B.logPhotoMeal({ date, mealType: toBMeal(meal), items, ...(photoId ? { photoId } : {}) })
+    return entries.map((e) => entryToUI(e))
+  },
+  async discard(photoId: string) {
+    await B.deletePhoto(photoId)
+  },
+})
 
 const aiService = initialized({
   async status() {
@@ -538,6 +593,9 @@ const aiService = initialized({
   async setAssistantEnabled(enabled: boolean) {
     return aiStatus(await B.updateAiSettings({ aiSuggestionsEnabled: enabled }))
   },
+  async setPhotoEnabled(enabled: boolean) {
+    return aiStatus(await B.updateAiSettings({ photoRecognitionEnabled: enabled }))
+  },
   async test() {
     const r = await B.testAiConnection()
     return r.ok ? { ok: true, message: `Connected to ${r.model}` } : { ok: false, message: AI_ERROR_TEXT[r.code] ?? r.message }
@@ -546,6 +604,7 @@ const aiService = initialized({
 
 export const orangeBackend: NutritionBackend = {
   ai: aiService,
+  photo: photoService,
   foods: initialized({
     async search(query: string) {
       if (!query.trim()) return []

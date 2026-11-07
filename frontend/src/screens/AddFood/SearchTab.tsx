@@ -1,4 +1,3 @@
-import { Clock, SearchX, Star } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { Food, MealType } from '@/core/types'
 import { FoodDetailSheet } from '@/components/food/FoodDetailSheet'
@@ -6,6 +5,7 @@ import { FoodListItem } from '@/components/food/FoodListItem'
 import { FoodSearchInput } from '@/components/food/FoodSearchInput'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { useFavoriteFoods, useFoodSearch, useRecentFoods } from '@/services/queries'
+import { Emoji, foodEmoji } from '@/lib/emoji'
 
 export const foodDetail = (f: Food) => [f.brand, 'per 100 g'].filter(Boolean).join(' · ')
 
@@ -14,7 +14,7 @@ export function FoodList({ foods, onSelect }: { foods: Food[]; onSelect: (f: Foo
     <ul className="divide-y divide-border/70">
       {foods.map((f) => (
         <li key={f.id}>
-          <FoodListItem name={f.name} detail={foodDetail(f)} calories={f.per100g.calories} favorite={f.isFavorite} onClick={() => onSelect(f)} />
+          <FoodListItem emoji={foodEmoji(f.name, f.category)} name={f.name} detail={foodDetail(f)} calories={f.per100g.calories} favorite={f.isFavorite} onClick={() => onSelect(f)} />
         </li>
       ))}
     </ul>
@@ -39,7 +39,7 @@ export function SearchTab({ meal, date }: { meal: MealType; date: string }) {
             <LoadingState />
           ) : results.data.length === 0 ? (
             <EmptyState
-              icon={<SearchX className="size-5" />}
+              emoji="🔎"
               title={`No results for “${q}”`}
               message="Try a simpler term, scan the barcode, or create a custom food."
             />
@@ -50,7 +50,7 @@ export function SearchTab({ meal, date }: { meal: MealType; date: string }) {
           )
         ) : (
           <div className="space-y-6">
-            <Section title="Favorites" icon={<Star className="size-3.5" />}>
+            <Section title="Favorites" icon={<Emoji>⭐</Emoji>}>
               {favorites.isError ? (
                 <ErrorState error={favorites.error} />
               ) : !favorites.data ? (
@@ -61,7 +61,7 @@ export function SearchTab({ meal, date }: { meal: MealType; date: string }) {
                 <p className="py-3 text-sm text-muted">Tap the star on any food to keep it here.</p>
               )}
             </Section>
-            <Section title="Recent" icon={<Clock className="size-3.5" />}>
+            <Section title="Recent" icon={<Emoji>🕘</Emoji>}>
               {recent.isError ? (
                 <ErrorState error={recent.error} />
               ) : !recent.data ? (

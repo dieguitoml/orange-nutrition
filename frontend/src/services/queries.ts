@@ -184,6 +184,24 @@ export const useSetAiKey = () => useAiMutation((key: string | null) => api.ai.se
 export const useAcceptAiNotice = () => useAiMutation((_: void) => api.ai.acceptPrivacyNotice())
 export const useRevokeAi = () => useAiMutation((forgetKey: boolean) => api.ai.revokeConsent(forgetKey))
 export const useSetAssistantEnabled = () => useAiMutation((enabled: boolean) => api.ai.setAssistantEnabled(enabled))
+export const useSetPhotoEnabled = () => useAiMutation((enabled: boolean) => api.ai.setPhotoEnabled(enabled))
+
+// ── Meal photos ──────────────────────────────────────────────────────────
+export const useAnalyzePhoto = () =>
+  useMutation({ mutationFn: (v: { image: Blob; meal: MealType; hint?: string }) => api.photo.analyze(v.image, { meal: v.meal, hint: v.hint }) })
+
+export const usePhotoTotals = (items: { foodId: string; grams: number }[]) =>
+  useQuery({
+    queryKey: ['photo', 'totals', JSON.stringify(items)],
+    queryFn: () => api.photo.totals(items),
+    enabled: items.length > 0,
+    placeholderData: keepPreviousData,
+  })
+
+export function useLogPhotoMeal() {
+  const qc = useQueryClient()
+  return useMutation({ mutationFn: api.photo.log, onSuccess: () => invalidateDiary(qc) })
+}
 export function useTestAi() {
   return useMutation({ mutationFn: () => api.ai.test() })
 }

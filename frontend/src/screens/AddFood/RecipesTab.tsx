@@ -1,4 +1,4 @@
-import { ChefHat, Minus, Plus, X } from 'lucide-react'
+import { Minus, Plus, X } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { Food, MealType, Recipe, RecipeDraft, RecipeIngredient } from '@/core/types'
@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { MEAL_LABELS, quantityLabel } from '@/lib/format'
 import { useDeleteRecipe, useFood, useFoodSearch, useLogRecipe, useRecipeCalculation, useRecipes, useSaveRecipe } from '@/services/queries'
 import { foodDetail } from './SearchTab'
+import { foodEmoji } from '@/lib/emoji'
 
 export function RecipesTab({ meal, date }: { meal: MealType; date: string }) {
   const recipes = useRecipes()
@@ -39,7 +40,7 @@ export function RecipesTab({ meal, date }: { meal: MealType; date: string }) {
         <LoadingState />
       ) : recipes.data.length === 0 ? (
         <EmptyState
-          icon={<ChefHat className="size-5" />}
+          emoji="👩‍🍳"
           title="No recipes yet"
           message="Build a recipe once from its ingredients, then log a serving in one tap."
         />
@@ -236,7 +237,7 @@ function IngredientPicker({ open, onClose, onPick }: { open: boolean; onClose: (
         <ul className="divide-y divide-border/70">
           {results.data.map((f) => (
             <li key={f.id}>
-              <FoodListItem name={f.name} detail={foodDetail(f)} calories={f.per100g.calories} onClick={() => onPick(f)} />
+              <FoodListItem emoji={foodEmoji(f.name, f.category)} name={f.name} detail={foodDetail(f)} calories={f.per100g.calories} onClick={() => onPick(f)} />
             </li>
           ))}
         </ul>

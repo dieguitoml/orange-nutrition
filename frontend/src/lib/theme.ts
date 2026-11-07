@@ -7,7 +7,7 @@ const media = () => window.matchMedia('(prefers-color-scheme: dark)')
 export function applyTheme(pref: ThemePreference) {
   const dark = pref === 'dark' || (pref === 'system' && media().matches)
   document.documentElement.classList.toggle('dark', dark)
-  const color = dark ? '#131714' : '#FAF9F6'
+  const color = dark ? '#17120F' : '#FFF9F3'
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', color))
   try {
     localStorage.setItem(KEY, pref)

@@ -120,6 +120,8 @@ export interface Food {
   isFavorite?: boolean
   /** Data provenance to display (e.g. USDA FoodData Central, Open Food Facts — ODbL). */
   attribution?: string
+  /** Backend food category (fruits, dairy, …) — used for display (emoji) only. */
+  category?: string
 }
 
 export interface Quantity {
@@ -139,6 +141,8 @@ export interface LogEntry {
   /** Nutrition for this entry's quantity, computed by the backend. */
   nutrition: NutritionValues
   createdAt: string
+  /** Food category ('recipe' for recipes) — display only. */
+  category?: string
 }
 
 export interface MealSummary {
@@ -309,6 +313,9 @@ export interface AiStatus {
   assistantEnabled: boolean
   /** Key + consent + switch on. */
   assistantAvailable: boolean
+  photoEnabled: boolean
+  /** Key + consent + photo switch on. */
+  photoAvailable: boolean
   model: string
   privacyNotice: string
 }
@@ -359,3 +366,28 @@ export type BarcodeResult =
   | { status: 'found'; food: Food }
   | { status: 'not_found'; barcode: string }
   | { status: 'error'; barcode: string; message: string }
+
+/** One food Gemini saw in a meal photo, matched to the local food database. */
+export interface PhotoItem {
+  id: string
+  /** What the AI called it, e.g. "chicken breast, grilled". */
+  name: string
+  /** Visual ESTIMATE from the AI — the user confirms or edits it. */
+  estimatedGrams: number
+  /** 0..1 as reported by the model (not calibrated). */
+  confidence: number
+  preparation?: string
+  /** Local foods that match, best first. Nutrition always comes from these. */
+  matches: Food[]
+  /** Pre-selected match; null when nothing in the database matched. */
+  selectedFoodId: string | null
+}
+
+export interface PhotoAnalysis {
+  isFood: boolean
+  description: string
+  items: PhotoItem[]
+  /** Stored on the device; attached to the entries when logged. */
+  photoId?: string
+  model: string
+}

@@ -22,6 +22,7 @@ import {
   useRevokeAi,
   useSetAiKey,
   useSetAssistantEnabled,
+  useSetPhotoEnabled,
   useTestAi,
   useUpdateGoals,
   useUpdatePreferences,
@@ -32,7 +33,7 @@ export function SettingsScreen() {
   const prefs = usePreferences()
   return (
     <div className="animate-fade-up pb-4">
-      <PageHeader title="Settings" back />
+      <PageHeader title="Settings" emoji="⚙️" back />
       {goals.isError || prefs.isError ? (
         <ErrorState error={goals.error ?? prefs.error} onRetry={() => (goals.refetch(), prefs.refetch())} />
       ) : !goals.data || !prefs.data ? (
@@ -96,7 +97,7 @@ function TargetsSection({ goals }: { goals: Goals }) {
   }
 
   return (
-    <Group title="Daily targets">
+    <Group title="🎯 Daily targets">
       <div className="grid grid-cols-2 gap-3">
         {MACRO_FIELDS.map((f) => (
           <div key={f.key} className={cn('space-y-1.5', f.key === 'calories' && 'col-span-2')}>
@@ -156,7 +157,7 @@ function MicroTargetsSection({ goals }: { goals: Goals }) {
         <Card className="p-0">
           <Collapsible.Trigger className="group flex min-h-16 w-full items-center justify-between px-5 py-3 text-left">
             <span>
-              <span className="block text-[15px] font-semibold">Micronutrient targets</span>
+              <span className="block text-[15px] font-semibold">💊 Micronutrient targets</span>
               <span className="block text-[12.5px] text-muted">Spanish reference intakes (AESAN 2019) by age and sex. Leave blank to remove a target.</span>
             </span>
             <ChevronDown className="size-5 shrink-0 text-muted transition group-data-[state=open]:rotate-180" />
@@ -227,7 +228,7 @@ function PreferencesSection({ prefs }: { prefs: Preferences }) {
   }
 
   return (
-    <Group title="Food preferences" description="Used to filter recommendations.">
+    <Group title="🥗 Food preferences" description="Used to filter recommendations.">
       <div className="space-y-1.5">
         <Label htmlFor="pref-name">Your name (for the greeting)</Label>
         <Input id="pref-name" value={draft.displayName ?? ''} maxLength={30} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} />
@@ -340,7 +341,7 @@ function ChipInput({ label, placeholder, values, onChange }: { label: string; pl
 function ThemeSection({ prefs }: { prefs: Preferences }) {
   const update = useUpdatePreferences()
   return (
-    <Group title="Appearance">
+    <Group title="🎨 Appearance">
       <SegmentedControl<ThemePreference>
         label="Theme"
         value={prefs.theme}
@@ -400,7 +401,7 @@ function DataSection() {
   }
 
   return (
-    <Group title="Your data" description="Everything is stored only on this device. Export a backup to keep it safe or move it to another device.">
+    <Group title="💾 Your data" description="Everything is stored only on this device. Export a backup to keep it safe or move it to another device.">
       <div className="grid grid-cols-2 gap-3">
         <Button variant="outline" onClick={doExport} disabled={exporting}>
           <Download className="size-4" /> Export
@@ -439,7 +440,7 @@ function DataSection() {
 function InstallSection() {
   const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone)
   return (
-    <Group title="Install on iPhone">
+    <Group title="📱 Install on iPhone">
       {standalone ? (
         <p className="text-[15px]">You're using Nourish as an installed app.</p>
       ) : (
@@ -470,6 +471,7 @@ function AiSection() {
   const accept = useAcceptAiNotice()
   const revoke = useRevokeAi()
   const setEnabled = useSetAssistantEnabled()
+  const setPhoto = useSetPhotoEnabled()
   const test = useTestAi()
   const [key, setKeyInput] = useState('')
   const [showNotice, setShowNotice] = useState(false)
@@ -491,8 +493,8 @@ function AiSection() {
   return (
     <Group
       id="ai"
-      title="AI assistant (Gemini)"
-      description="Optional. Uses your own free Google Gemini API key, stored only on this device."
+      title="✨ AI with Gemini"
+      description="Optional. Powers the chat assistant and meal-photo recognition. Uses your own free Google Gemini API key, stored only on this device."
     >
       {!s ? (
         <p className="text-sm text-muted">Loading…</p>
@@ -503,9 +505,11 @@ function AiSection() {
               <Sparkles className="size-4" />
             </div>
             <p className="text-[14px] leading-relaxed">
-              {s.assistantAvailable
-                ? 'The Assistant tab is chatting with Gemini.'
-                : 'Turn this on to chat with Gemini in the Assistant tab. Without it, the built-in rule-based suggestions are used.'}
+              {s.assistantAvailable || s.photoAvailable
+                ? [s.assistantAvailable && 'The Assistant tab is chatting with Gemini.', s.photoAvailable && 'You can log meals from a photo in Add Food → Photo.']
+                    .filter(Boolean)
+                    .join(' ')
+                : 'Turn these on to chat with Gemini in the Assistant tab and to log meals from a photo. Without them, everything else works as usual.'}
             </p>
           </div>
 
@@ -573,26 +577,19 @@ function AiSection() {
           {/* 3. Switch + test */}
           {s.hasApiKey && s.consentAccepted && (
             <>
-              <label className="flex min-h-11 items-center justify-between gap-3">
-                <span className="text-[15px]">Use Gemini in the Assistant</span>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  className="peer sr-only"
-                  checked={s.assistantEnabled}
-                  disabled={setEnabled.isPending}
-                  onChange={(e) => run(() => setEnabled.mutateAsync(e.target.checked))}
-                />
-                <span
-                  aria-hidden
-                  className={cn(
-                    'relative h-7 w-12 shrink-0 rounded-full transition peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20',
-                    s.assistantEnabled ? 'bg-primary' : 'bg-surface-2 border border-border',
-                  )}
-                >
-                  <span className={cn('absolute top-0.5 size-6 rounded-full bg-white shadow transition-all', s.assistantEnabled ? 'left-[22px]' : 'left-0.5')} />
-                </span>
-              </label>
+              <Switch
+                label="Use Gemini in the Assistant"
+                checked={s.assistantEnabled}
+                disabled={setEnabled.isPending}
+                onChange={(v) => run(() => setEnabled.mutateAsync(v))}
+              />
+              <Switch
+                label="📸 Recognise meals from photos"
+                hint="Add Food → Photo. The photo is sent to Google; Gemini only names foods and estimates grams — nutrition comes from the food database."
+                checked={s.photoEnabled}
+                disabled={setPhoto.isPending}
+                onChange={(v) => run(() => setPhoto.mutateAsync(v), v ? 'Photo recognition on' : undefined)}
+              />
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -611,7 +608,8 @@ function AiSection() {
                 </Button>
               </div>
               <p className="text-[12.5px] leading-relaxed text-muted">
-                Your chat messages, today's diary and 7-day nutrient averages are sent to Google to answer. Google's free tier may use them to improve
+                Chat: your messages, today's diary and 7-day nutrient averages are sent to Google to answer. Photos: only the downscaled image (and
+                your optional note) is sent. Google's free tier may use them to improve
                 its products. Nutrition numbers on meal cards always come from the app's food database.
               </p>
             </>
@@ -619,5 +617,38 @@ function AiSection() {
         </>
       )}
     </Group>
+  )
+}
+
+function Switch({
+  label,
+  hint,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <label className="flex min-h-11 items-center justify-between gap-3">
+      <span className="min-w-0">
+        <span className="block text-[15px]">{label}</span>
+        {hint && <span className="mt-0.5 block text-[12.5px] leading-snug text-muted">{hint}</span>}
+      </span>
+      <input type="checkbox" role="switch" className="peer sr-only" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span
+        aria-hidden
+        className={cn(
+          'relative h-7 w-12 shrink-0 rounded-full transition peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20',
+          checked ? 'bg-primary' : 'border border-border bg-surface-2',
+        )}
+      >
+        <span className={cn('absolute top-0.5 size-6 rounded-full bg-white shadow transition-all', checked ? 'left-[22px]' : 'left-0.5')} />
+      </span>
+    </label>
   )
 }

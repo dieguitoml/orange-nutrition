@@ -9,7 +9,7 @@ import { Button } from './ui/button'
 
 const DOT: Record<AdherenceStatus, string> = {
   none: 'bg-transparent',
-  within: 'bg-primary',
+  within: 'bg-fiber',
   under: 'bg-carbs',
   over: 'bg-protein',
 }
@@ -79,7 +79,7 @@ export function CalendarGrid({
         })}
       </div>
       <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11.5px] text-muted">
-        <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-primary" />Within goal</span>
+        <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-fiber" />Within goal</span>
         <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-carbs" />Under</span>
         <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-protein" />Over</span>
       </div>

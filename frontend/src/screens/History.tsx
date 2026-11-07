@@ -72,7 +72,7 @@ export function HistoryScreen() {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="History" />
+      <PageHeader title="History" emoji="📅" />
       <SegmentedControl
         label="Range"
         value={range}
@@ -102,34 +102,35 @@ export function HistoryScreen() {
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Metric label="Avg calories" value={h.daysLogged ? kcal(h.averages.calories) : '—'} unit={h.daysLogged ? 'kcal' : ''} />
-            <Metric label="Days logged" value={`${h.daysLogged}`} unit={`of ${h.days.length}`} />
-            <Metric label="Within calorie goal" value={`${h.daysWithinCalorieGoal}`} unit={h.daysLogged ? `of ${h.daysLogged} days` : ''} />
-            <Metric label="Protein goal met" value={`${h.daysMeetingProtein}`} unit={h.daysLogged ? `of ${h.daysLogged} days` : ''} />
+            <Metric emoji="🔥" tint="bg-meal-breakfast" label="Avg calories" value={h.daysLogged ? kcal(h.averages.calories) : '—'} unit={h.daysLogged ? 'kcal' : ''} />
+            <Metric emoji="📒" tint="bg-meal-lunch" label="Days logged" value={`${h.daysLogged}`} unit={`of ${h.days.length}`} />
+            <Metric emoji="🎯" tint="bg-meal-snacks" label="Within calorie goal" value={`${h.daysWithinCalorieGoal}`} unit={h.daysLogged ? `of ${h.daysLogged} days` : ''} />
+            <Metric emoji="💪" tint="bg-meal-dinner" label="Protein goal met" value={`${h.daysMeetingProtein}`} unit={h.daysLogged ? `of ${h.daysLogged} days` : ''} />
           </div>
 
           {h.daysLogged === 0 ? (
             <Card>
               <p className="py-6 text-center text-sm text-muted">
+                <span aria-hidden className="emoji mb-2 block text-[28px]">🌱</span>
                 No entries this {range}. Trends appear once you log a few days.
               </p>
             </Card>
           ) : (
             <>
-              <ChartCard title="Calories" subtitle={goals.data ? `Dashed line: ${kcal(goals.data.calories)} kcal target` : undefined}>
+              <ChartCard title="🔥 Calories" subtitle={goals.data ? `Dashed line: ${kcal(goals.data.calories)} kcal target` : undefined}>
                 <NutritionBarChart data={data} target={goals.data?.calories} series={[{ key: 'calories', name: 'Calories', color: 'primary', unit: 'kcal' }]} />
               </ChartCard>
               <ChartCard
-                title="Macros"
+                title="🥗 Macros"
                 subtitle={`Avg P ${grams(h.averages.protein)} · C ${grams(h.averages.carbs)} · F ${grams(h.averages.fat)} g`}
                 legend={macroSeries}
               >
                 <NutritionBarChart data={data} stacked series={macroSeries} />
               </ChartCard>
-              <ChartCard title="Fiber" subtitle={`Avg ${grams(h.averages.fiber)} g · goal met ${h.daysMeetingFiber} of ${h.daysLogged} days`}>
+              <ChartCard title="🌾 Fiber" subtitle={`Avg ${grams(h.averages.fiber)} g · goal met ${h.daysMeetingFiber} of ${h.daysLogged} days`}>
                 <NutritionLineChart data={data} target={goals.data?.fiber} series={[{ key: 'fiber', name: 'Fiber', color: 'fiber', unit: 'g' }]} />
               </ChartCard>
-              <ChartCard title="Micronutrient trend" subtitle="Gaps mean no food reported it that day">
+              <ChartCard title="💊 Micronutrient trend" subtitle="Gaps mean no food reported it that day">
                 <NutritionLineChart
                   data={data}
                   target={goals.data?.micros[micro] ?? null}
@@ -178,10 +179,13 @@ export function HistoryScreen() {
   )
 }
 
-function Metric({ label, value, unit }: { label: string; value: string; unit: string }) {
+function Metric({ emoji, tint, label, value, unit }: { emoji: string; tint: string; label: string; value: string; unit: string }) {
   return (
-    <div className="rounded-[20px] border border-border/70 bg-surface px-4 py-3">
-      <p className="text-[12px] font-medium text-muted">{label}</p>
+    <div className={`rounded-[20px] px-4 py-3 ${tint}`}>
+      <p className="flex items-center gap-1.5 text-[12px] font-medium text-foreground/70">
+        <span aria-hidden className="emoji text-[14px]">{emoji}</span>
+        {label}
+      </p>
       <p className="mt-0.5 tabular text-[22px] font-semibold tracking-tight">
         {value} <span className="text-[12px] font-medium text-muted">{unit}</span>
       </p>
@@ -191,9 +195,9 @@ function Metric({ label, value, unit }: { label: string; value: string; unit: st
 
 const ADH: Record<DayStat['adherence'], { label: string; cls: string }> = {
   none: { label: 'Not logged', cls: 'bg-surface-2 text-muted' },
-  within: { label: 'On target', cls: 'bg-soft text-accent' },
-  under: { label: 'Under', cls: 'bg-carbs/15 text-[color-mix(in_oklab,var(--carbs)_70%,var(--foreground))]' },
-  over: { label: 'Over', cls: 'bg-protein/15 text-[color-mix(in_oklab,var(--protein)_70%,var(--foreground))]' },
+  within: { label: '✅ On target', cls: 'bg-sage-soft text-sage' },
+  under: { label: '⬇️ Under', cls: 'bg-meal-lunch text-warning' },
+  over: { label: '⬆️ Over', cls: 'bg-protein/15 text-danger' },
 }
 
 function DayRow({ day, onClick }: { day: DayStat; onClick: () => void }) {

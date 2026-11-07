@@ -5,6 +5,8 @@
  */
 import type {
   AiStatus,
+  PhotoAnalysis,
+  Macros,
   AssistantReply,
   ChatTurn,
   BackupExport,
@@ -102,7 +104,20 @@ export interface AiService {
   acceptPrivacyNotice(): Promise<AiStatus>
   revokeConsent(forgetKey?: boolean): Promise<AiStatus>
   setAssistantEnabled(enabled: boolean): Promise<AiStatus>
+  setPhotoEnabled(enabled: boolean): Promise<AiStatus>
   test(): Promise<{ ok: boolean; message: string }>
+}
+
+/** Meal photo → foods (Gemini names foods and estimates grams; nutrition comes from the database). */
+export interface PhotoService {
+  analyze(image: Blob, opts: { meal: MealType; hint?: string }): Promise<PhotoAnalysis>
+  /** Re-run database matching for a food name (e.g. after the user renames an item). */
+  rematch(name: string): Promise<import('./types').Food[]>
+  /** Totals for the confirmed items, computed by the backend. */
+  totals(items: { foodId: string; grams: number }[]): Promise<Macros>
+  log(input: { date: ISODate; meal: MealType; photoId?: string; items: { foodId: string; grams: number }[] }): Promise<LogEntry[]>
+  /** Delete a stored photo the user decided not to log. */
+  discard(photoId: string): Promise<void>
 }
 
 export interface NutritionBackend {
@@ -117,4 +132,5 @@ export interface NutritionBackend {
   preferences: PreferenceService
   backup: BackupService
   ai: AiService
+  photo: PhotoService
 }

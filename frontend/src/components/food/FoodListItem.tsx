@@ -2,6 +2,7 @@ import { ChevronRight, Star } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { grams, kcal } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { Emoji } from '@/lib/emoji'
 
 export function FoodListItem({
   name,
@@ -12,7 +13,9 @@ export function FoodListItem({
   favorite,
   trailing,
   className,
+  emoji,
 }: {
+  emoji?: string
   name: string
   detail?: string
   calories: number
@@ -24,6 +27,11 @@ export function FoodListItem({
 }) {
   const body = (
     <>
+      {emoji && (
+        <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-surface-2">
+          <Emoji className="text-[20px]">{emoji}</Emoji>
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-[15px] font-medium">{name}</span>
