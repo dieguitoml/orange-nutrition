@@ -130,7 +130,7 @@ Allergies, diets (vegan, vegetarian, pescatarian, gluten_free, dairy_free), disl
 
 ## AI: photo recognition & smart suggestions (Google Gemini, opt-in)
 
-AI is **off by default**. To turn it on: (1) the user pastes their own free key from Google AI Studio, (2) accepts `AI_PRIVACY_NOTICE`, (3) enables each feature. The key is stored only on the device (`meta` table) and is never included in backups. Calls go straight from the browser to `generativelanguage.googleapis.com`; CORS is supported for `*.github.io`.
+AI is **off by default**. To turn it on: (1) the user pastes their own free key from Google AI Studio, (2) accepts `AI_PRIVACY_NOTICE`, (3) enables each feature. The key is stored only on the device (`meta` table) and is never included in backups. Calls go straight from the browser to Google's **Interactions API** (`POST generativelanguage.googleapis.com/v1beta/interactions`). Google retired `generateContent` access to older models for new users, and new-style `AQ.…` keys only work with the Interactions API. CORS is supported for `*.github.io`. The free tier allows **5 requests per minute**: the client enforces this locally, retries temporary "high demand" (503) errors once, then tries the next model.
 
 **The AI never provides nutrient values.** It only names foods and estimates grams (photos) or picks foods and grams from the app's catalog (suggestions). Nutrition is always calculated locally from the database, hard allergy/diet filters are re-applied, and the user confirms before anything is logged.
 
@@ -139,7 +139,7 @@ AI is **off by default**. To turn it on: (1) the user pastes their own free key 
 | `AI_PRIVACY_NOTICE` | Text to show before enabling (what is sent, Google free-tier data use). |
 | `setAiApiKey(key \| null)` | Save or remove the key. Returns `AiSettingsPublic` (never contains the key; `apiKeyHint` like `…x9Qk`). |
 | `acceptAiPrivacyNotice()` / `revokeAiConsent(forgetKey?)` | Consent with timestamp. Revoking turns every AI feature off. |
-| `updateAiSettings({ photoRecognitionEnabled?, aiSuggestionsEnabled?, model? })` | Throws `VALIDATION` if there's no key or no consent. Default model: `gemini-flash-latest`, falling back automatically to `gemini-2.5-flash` / `gemini-2.0-flash` if a model is retired. |
+| `updateAiSettings({ photoRecognitionEnabled?, aiSuggestionsEnabled?, model? })` | Throws `VALIDATION` if there's no key or no consent. Default model: `gemini-3.8-flash` (newest free-tier Flash), falling back automatically to `gemini-3.5-flash`, then the Lite models, if a model is retired or overloaded. Settings saved with retired models (`gemini-flash-latest`, `gemini-2.5-flash`…) are migrated automatically. |
 | `getAiSettingsPublic()` | `{ hasApiKey, apiKeyHint, photoRecognitionAvailable, aiSuggestionsAvailable, model, consentAcceptedAt, ... }`. |
 | `testAiConnection()` | `{ ok: true, model }` or `{ ok: false, code, message }` (`INVALID_KEY`, `RATE_LIMITED`, `NO_CONSENT`…). |
 

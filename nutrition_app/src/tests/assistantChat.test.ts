@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { acceptAiPrivacyNotice, chatWithAssistant, configureAiFetch, setAiApiKey, updateAiSettings } from '../services/ai';
+import { acceptAiPrivacyNotice, chatWithAssistant, configureAiFetch, getAiSettings, setAiApiKey, updateAiSettings } from '../services/ai';
+import { resetGeminiRateLimiter } from '../integrations/gemini';
+import { metaRepository } from '../data/repositories';
 import { setAllergies, setMacroGoals } from '../services/goals';
 import { addMealEntry } from '../services/meals';
 import { seedDatabase } from '../data/seed';
 import { freshDb } from './helpers';
 
-const gemini = (obj: unknown) => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] }, finishReason: 'STOP' }] }), { status: 200 });
+const gemini = (obj: unknown) => new Response(JSON.stringify({ status: 'completed', steps: [{ type: 'thought', signature: 'x' }, { type: 'model_output', content: [{ type: 'text', text: JSON.stringify(obj) }] }] }), { status: 200 });
 
 describe('AI assistant chat', () => {
   let sent: { system: string; parts: { text: string }[] } | null = null;
@@ -15,13 +17,14 @@ describe('AI assistant chat', () => {
     await seedDatabase();
     await setMacroGoals({ calories: 2000, protein: 120 }, '2026-01-01');
     sent = null;
+    resetGeminiRateLimiter();
   });
   afterEach(() => configureAiFetch(undefined));
 
   async function enable(answer: unknown) {
     configureAiFetch((async (_u: unknown, init: RequestInit) => {
       const body = JSON.parse(init.body as string);
-      sent = { system: body.systemInstruction.parts[0].text, parts: body.contents[0].parts };
+      sent = { system: body.system_instruction, parts: body.input };
       return gemini(answer);
     }) as unknown as typeof fetch);
     await setAiApiKey('AIzaTestKey1234567890');
@@ -69,6 +72,11 @@ describe('AI assistant chat', () => {
     expect(sent!.parts[1]!.text).toContain('Assistant: ¡Hola!');
     expect(sent!.parts[2]!.text).toContain('¿Qué ceno hoy?');
     expect(sent!.system).toMatch(/Never diagnose/);
+  });
+
+  it('migrates settings saved with a retired model', async () => {
+    await metaRepository.set('aiSettings', { provider: 'gemini', apiKey: 'AIzaTestKey1234567890', model: 'gemini-flash-latest', photoRecognitionEnabled: false, aiSuggestionsEnabled: true, consentAcceptedAt: '2026-11-07T00:00:00.000Z' });
+    expect((await getAiSettings()).model).toBe('gemini-3.8-flash');
   });
 
   it('maps provider failures and rejects empty messages', async () => {

@@ -8,6 +8,7 @@ import { getDb, guard } from '../../data/db';
 import { foodRepository, mealEntryRepository } from '../../data/repositories';
 import { bytesToBase64, GeminiError, type GeminiSchema } from '../../integrations/gemini/client';
 import { searchFoods } from '../food/foodService';
+import { tokenize } from '../../core/utils/text';
 import { snapshotOf } from '../meals/snapshot';
 import { getAiClient, getAiSettings } from './settings';
 import { MAX_PHOTO_BYTES, prepareImage, savePhoto, type PreparedImage } from './photos';
@@ -45,23 +46,35 @@ const SCHEMA: GeminiSchema = {
   required: ['isFood', 'description', 'items'],
 };
 
+const itemSchema = z.object({
+  name: z.string().trim().min(1).transform((v) => v.slice(0, 120)),
+  searchTerms: z.array(z.string()).catch([]).transform((a) => a.map((t) => t.trim().slice(0, 80)).filter(Boolean).slice(0, 5)),
+  estimatedGrams: z.number().finite().catch(100),
+  confidence: z.number().finite().catch(0.5),
+  preparation: z.string().optional().catch(undefined).transform((v) => v?.slice(0, 40)),
+});
+
+/** Lenient: invalid items are dropped individually, long fields are truncated, at most 20 items kept. */
 const responseSchema = z.object({
   isFood: z.boolean(),
-  description: z.string().max(500).catch(''),
+  description: z.string().catch('').transform((v) => v.slice(0, 500)),
   items: z
-    .array(
-      z.object({
-        name: z.string().trim().min(1).max(120),
-        searchTerms: z.array(z.string().trim().min(1).max(80)).max(5).catch([]),
-        estimatedGrams: z.number().finite().catch(100),
-        confidence: z.number().finite().catch(0.5),
-        preparation: z.string().max(40).optional().catch(undefined),
-      }),
-    )
-    .max(15),
+    .array(z.unknown())
+    .catch([])
+    .transform((arr) => arr.flatMap((i) => {
+      const r = itemSchema.safeParse(i);
+      return r.success ? [r.data] : [];
+    }).slice(0, 20)),
 });
 
 const COOKED = /\b(cooked|grilled|fried|baked|boiled|roasted|steamed|scrambled|broiled|sauteed|stewed)\b/;
+
+/** Words that describe a food but never identify it (a match on these alone is meaningless). */
+const GENERIC = new Set([
+  'whole', 'raw', 'cooked', 'fresh', 'sliced', 'slice', 'dried', 'dry', 'roasted', 'roast', 'grilled', 'boiled', 'fried', 'baked', 'steamed',
+  'plain', 'mixed', 'mix', 'red', 'green', 'yellow', 'white', 'black', 'large', 'small', 'medium', 'chopped', 'diced', 'piece', 'pieces',
+  'homemade', 'organic', 'low', 'fat', 'free', 'style', 'serving', 'portion', 'bowl', 'plate', 'cup', 'sweet', 'hot', 'cold',
+]);
 
 /** Ranks local foods for one detected item. Prefers forms matching the visible preparation. */
 export async function matchDetectedFood(d: DetectedFood, limit = 5): Promise<FoodSearchResult[]> {
@@ -78,7 +91,16 @@ export async function matchDetectedFood(d: DetectedFood, limit = 5): Promise<Foo
       if (!prev || prev.score < score) merged.set(r.food.id, { ...r, score });
     }
   }
-  let list = [...merged.values()];
+  // Require at least one identifying word ("fish", "bread", "squash") to appear in the food; score by how many do.
+  const keyTerms = [...new Set(queries.flatMap((q) => tokenize(q)).filter((t) => !GENERIC.has(t) && t.length > 2))];
+  let list = [...merged.values()]
+    .map((r) => {
+      const foodTokens = new Set(tokenize([r.food.name, ...r.food.aliases].join(' ')));
+      const hits = keyTerms.filter((t) => foodTokens.has(t)).length;
+      return { r: { ...r, score: r.score + hits * 60 }, hits };
+    })
+    .filter((x) => keyTerms.length === 0 || x.hits > 0)
+    .map((x) => x.r);
   if (list.some((r) => r.matchType !== 'partial')) list = list.filter((r) => r.matchType !== 'partial');
   return list.sort((a, b) => b.score - a.score || a.food.name.localeCompare(b.food.name)).slice(0, limit);
 }

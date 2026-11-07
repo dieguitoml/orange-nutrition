@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "seed:build": "tsx scripts/build-usda-seed.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "ai:check": "tsx scripts/live-gemini-check.ts"
   },
   "license": "MIT",
   "dependencies": {

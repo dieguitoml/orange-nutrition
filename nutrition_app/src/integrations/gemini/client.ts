@@ -1,12 +1,16 @@
 /**
- * Minimal Google Gemini REST client (generateContent) for browser use.
+ * Minimal Google Gemini client for browser use, built on the **Interactions API**
+ * (`POST /v1beta/interactions`). Google retired `generateContent` access to older models for new
+ * users (e.g. gemini-2.5-flash, gemini-flash-latest), and new-style keys (`AQ.…`) only work here.
  *
  * - The API key is the USER'S OWN free key (Google AI Studio), stored on-device and sent only to
  *   generativelanguage.googleapis.com in the `x-goog-api-key` header. Never bundle a key in the app.
  * - The endpoint supports CORS for browser origins (e.g. https://<user>.github.io).
  * - Free-tier requests may be used by Google to improve its products; the app shows AI_PRIVACY_NOTICE
  *   and requires consent before any request.
- * - Responses are requested as JSON constrained by a response schema, then validated with Zod by callers.
+ * - Responses are requested as JSON constrained by a JSON schema (`response_format`), then validated with Zod.
+ * - Free tier is ~5 requests/minute: a client-side limiter fails fast with RATE_LIMITED instead of
+ *   wasting quota; temporary "high demand" (503) errors are retried, then the next model is tried.
  */
 
 export type GeminiErrorCode =
@@ -14,6 +18,7 @@ export type GeminiErrorCode =
   | 'INVALID_KEY'
   | 'PERMISSION_DENIED'
   | 'RATE_LIMITED'
+  | 'OVERLOADED'
   | 'MODEL_NOT_FOUND'
   | 'BLOCKED'
   | 'OFFLINE'
@@ -27,6 +32,8 @@ export class GeminiError extends Error {
     readonly code: GeminiErrorCode,
     message: string,
     readonly status?: number,
+    /** Seconds to wait before retrying (rate limits). */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'GeminiError';
@@ -46,6 +53,9 @@ export interface GeminiSchema {
 
 export type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
+/** Interactions API input content. */
+type InteractionContent = { type: 'text'; text: string } | { type: 'image'; data: string; mime_type: string };
+
 export interface GenerateJsonOptions {
   system: string;
   parts: GeminiPart[];
@@ -62,17 +72,37 @@ export interface GeminiClientOptions {
   baseUrl?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  /** Client-side cap (free tier allows ~5/min). */
+  maxRequestsPerMinute?: number;
+  /** For tests. */
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
 }
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
-export const GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+/** Newest Flash model available on the free tier (Pro models have a free-tier limit of 0). */
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+export const GEMINI_FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+/** Models Google no longer serves to new users; stored settings using them are migrated. */
+export const RETIRED_GEMINI_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+export const FREE_TIER_REQUESTS_PER_MINUTE = 5;
+
+/** Shared across client instances: the quota is per key, not per object. */
+const requestLog: number[] = [];
+/** Clears the limiter (tests). */
+export function resetGeminiRateLimiter(): void {
+  requestLog.length = 0;
+}
 
 interface GeminiErrorBody {
   error?: { code?: number; message?: string; status?: string; details?: { reason?: string }[] };
 }
 
 export class GeminiClient {
-  private readonly opts: Required<Omit<GeminiClientOptions, 'fetchImpl'>> & { fetchImpl: typeof fetch };
+  private readonly opts: Required<Omit<GeminiClientOptions, 'fetchImpl' | 'sleep' | 'now'>> & {
+    fetchImpl: typeof fetch;
+    sleep: (ms: number) => Promise<void>;
+    now: () => number;
+  };
 
   constructor(opts: GeminiClientOptions) {
     if (!opts.apiKey) throw new GeminiError('NO_KEY', 'No Gemini API key configured');
@@ -81,25 +111,29 @@ export class GeminiClient {
       model: opts.model || DEFAULT_GEMINI_MODEL,
       fallbackModels: opts.fallbackModels ?? GEMINI_FALLBACK_MODELS,
       baseUrl: (opts.baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta').replace(/\/$/, ''),
-      timeoutMs: opts.timeoutMs ?? 30_000,
+      timeoutMs: opts.timeoutMs ?? 25_000,
       fetchImpl: opts.fetchImpl ?? ((...a) => globalThis.fetch(...a)),
+      maxRequestsPerMinute: opts.maxRequestsPerMinute ?? FREE_TIER_REQUESTS_PER_MINUTE,
+      sleep: opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+      now: opts.now ?? Date.now,
     };
   }
 
   /** Model that actually answered the last successful request. */
   lastModel: string | null = null;
 
-  /** Calls generateContent and returns the parsed JSON object (unvalidated: callers validate). */
+  /** Sends one interaction and returns the parsed JSON object (unvalidated: callers validate). */
   async generateJson(options: GenerateJsonOptions): Promise<unknown> {
     const models = [this.opts.model, ...this.opts.fallbackModels.filter((m) => m !== this.opts.model)];
     let lastErr: GeminiError | null = null;
     for (const model of models) {
       try {
-        const out = await this.callModel(model, options);
+        const out = await this.callWithRetry(model, options);
         this.lastModel = model;
         return out;
       } catch (e) {
-        if (e instanceof GeminiError && e.code === 'MODEL_NOT_FOUND') {
+        // Retired/unknown model or sustained overload → try the next model.
+        if (e instanceof GeminiError && (e.code === 'MODEL_NOT_FOUND' || e.code === 'OVERLOADED')) {
           lastErr = e;
           continue;
         }
@@ -109,23 +143,51 @@ export class GeminiClient {
     throw lastErr ?? new GeminiError('MODEL_NOT_FOUND', 'No available Gemini model');
   }
 
+  private async callWithRetry(model: string, o: GenerateJsonOptions): Promise<unknown> {
+    try {
+      return await this.callModel(model, o);
+    } catch (e) {
+      if (e instanceof GeminiError && e.code === 'OVERLOADED') {
+        await this.opts.sleep(1500);
+        return this.callModel(model, o);
+      }
+      throw e;
+    }
+  }
+
+  private takeRateToken() {
+    const t = this.opts.now();
+    while (requestLog.length && t - requestLog[0]! >= 60_000) requestLog.shift();
+    if (requestLog.length >= this.opts.maxRequestsPerMinute) {
+      const wait = Math.ceil((60_000 - (t - requestLog[0]!)) / 1000);
+      throw new GeminiError('RATE_LIMITED', `Free Gemini limit is ${this.opts.maxRequestsPerMinute} requests per minute; try again in ${wait}s`, 429, wait);
+    }
+    requestLog.push(t);
+  }
+
   private async callModel(model: string, o: GenerateJsonOptions): Promise<unknown> {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new GeminiError('OFFLINE', 'Device is offline');
+    this.takeRateToken();
+    const input: InteractionContent[] = o.parts.map((p) =>
+      'text' in p ? { type: 'text', text: p.text } : { type: 'image', data: p.inline_data.data, mime_type: p.inline_data.mime_type },
+    );
     const body = {
-      systemInstruction: { parts: [{ text: o.system }] },
-      contents: [{ role: 'user', parts: o.parts }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: o.schema,
+      model,
+      system_instruction: o.system,
+      input,
+      response_format: toJsonSchema(o.schema),
+      generation_config: {
         temperature: o.temperature ?? 0.2,
-        maxOutputTokens: o.maxOutputTokens ?? 4096,
+        max_output_tokens: o.maxOutputTokens ?? 4096,
+        // Keeps latency low on the free tier; answers here don't need deep reasoning.
+        thinking_level: 'low',
       },
     };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs);
     let res: Response;
     try {
-      res = await this.opts.fetchImpl(`${this.opts.baseUrl}/models/${encodeURIComponent(model)}:generateContent`, {
+      res = await this.opts.fetchImpl(`${this.opts.baseUrl}/interactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.opts.apiKey },
         body: JSON.stringify(body),
@@ -142,27 +204,45 @@ export class GeminiClient {
     try {
       json = await res.json();
     } catch {
+      // Google answers some unknown/retired model routes with an empty 404.
+      if (res.status === 404) throw new GeminiError('MODEL_NOT_FOUND', `Model ${model} is not available`, 404);
       throw new GeminiError(res.ok ? 'INVALID_RESPONSE' : 'HTTP', `AI service returned a non-JSON response (${res.status})`, res.status);
     }
 
     if (!res.ok) throw mapError(res.status, json as GeminiErrorBody);
 
     const data = json as {
-      candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
-      promptFeedback?: { blockReason?: string };
+      status?: string;
+      steps?: { type?: string; content?: { type?: string; text?: string }[] }[];
+      outputs?: { type?: string; text?: string }[];
     };
-    if (data.promptFeedback?.blockReason) throw new GeminiError('BLOCKED', `Request blocked by the AI service (${data.promptFeedback.blockReason})`);
-    const cand = data.candidates?.[0];
-    if (!cand) throw new GeminiError('INVALID_RESPONSE', 'AI service returned no answer');
-    if (cand.finishReason === 'SAFETY' || cand.finishReason === 'PROHIBITED_CONTENT') throw new GeminiError('BLOCKED', 'Answer blocked by the AI service');
-    const text = cand.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
-    if (!text.trim()) throw new GeminiError('INVALID_RESPONSE', `AI service returned an empty answer${cand.finishReason ? ` (${cand.finishReason})` : ''}`);
+    // 'incomplete' = output token limit reached; the partial text is still tried below.
+    if (data.status && data.status !== 'completed' && data.status !== 'incomplete') {
+      throw new GeminiError(/block|safety/i.test(data.status) ? 'BLOCKED' : 'INVALID_RESPONSE', `AI interaction ended with status "${data.status}"`);
+    }
+    const fromSteps = (data.steps ?? []).filter((st) => st.type === 'model_output').flatMap((st) => st.content ?? []);
+    const text = [...fromSteps, ...(data.outputs ?? [])]
+      .filter((c) => !c.type || c.type === 'text')
+      .map((c) => c.text ?? '')
+      .join('');
+    if (!text.trim()) throw new GeminiError('INVALID_RESPONSE', data.status === 'incomplete' ? 'AI answer was cut off (output limit)' : 'AI service returned an empty answer');
     try {
       return JSON.parse(stripFences(text));
     } catch {
       throw new GeminiError('INVALID_RESPONSE', 'AI answer was not valid JSON');
     }
   }
+}
+
+/** Converts the OpenAPI-style schema (uppercase types) to standard JSON Schema for `response_format`. */
+export function toJsonSchema(s: GeminiSchema): Record<string, unknown> {
+  const out: Record<string, unknown> = { type: s.type.toLowerCase() };
+  if (s.description) out.description = s.description;
+  if (s.enum) out.enum = s.enum;
+  if (s.properties) out.properties = Object.fromEntries(Object.entries(s.properties).map(([k, v]) => [k, toJsonSchema(v)]));
+  if (s.required) out.required = s.required;
+  if (s.items) out.items = toJsonSchema(s.items);
+  return out;
 }
 
 function stripFences(text: string): string {
@@ -176,9 +256,14 @@ function mapError(status: number, body: GeminiErrorBody): GeminiError {
   const reason = body.error?.details?.map((d) => d.reason).find(Boolean);
   const st = body.error?.status;
   if (reason === 'API_KEY_INVALID' || (status === 400 && /api key/i.test(msg))) return new GeminiError('INVALID_KEY', 'The Gemini API key is not valid', status);
-  if (status === 429 || st === 'RESOURCE_EXHAUSTED') return new GeminiError('RATE_LIMITED', 'Free AI quota reached; try again later', status);
+  if (status === 429 || st === 'RESOURCE_EXHAUSTED') {
+    const m = /retry in (\d+(?:\.\d+)?)\s*s/i.exec(msg);
+    const wait = m ? Math.ceil(Number(m[1])) : undefined;
+    return new GeminiError('RATE_LIMITED', wait ? `Free Gemini limit reached; try again in ${wait}s` : 'Free Gemini quota reached; try again later', status, wait);
+  }
+  if (status === 503 || st === 'UNAVAILABLE') return new GeminiError('OVERLOADED', 'Gemini is busy right now; try again in a moment', status);
   if (status === 404 || st === 'NOT_FOUND') return new GeminiError('MODEL_NOT_FOUND', msg, status);
-  if (status === 403 || st === 'PERMISSION_DENIED') return new GeminiError('PERMISSION_DENIED', msg, status);
+  if (status === 401 || status === 403 || st === 'PERMISSION_DENIED' || st === 'UNAUTHENTICATED') return new GeminiError('PERMISSION_DENIED', msg, status);
   return new GeminiError('HTTP', msg, status);
 }
 

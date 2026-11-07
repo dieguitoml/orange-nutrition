@@ -3,7 +3,7 @@ import { aiSettingsSchema } from '../../core/validation/schemas';
 import { DataError } from '../../core/utils/errors';
 import { nowIso } from '../../core/utils/dates';
 import { metaRepository } from '../../data/repositories';
-import { DEFAULT_GEMINI_MODEL, GeminiClient, GeminiError } from '../../integrations/gemini/client';
+import { DEFAULT_GEMINI_MODEL, GeminiClient, GeminiError, RETIRED_GEMINI_MODELS } from '../../integrations/gemini/client';
 
 /** Shown to the user before AI can be enabled. Consent is stored with a timestamp. */
 export const AI_PRIVACY_NOTICE = [
@@ -24,7 +24,11 @@ export function defaultAiSettings(): AiSettings {
 /** Full settings INCLUDING the API key. Never render the key; use getAiSettingsPublic for UI. */
 export async function getAiSettings(): Promise<AiSettings> {
   const stored = await metaRepository.get<AiSettings>(KEY);
-  return stored ? { ...defaultAiSettings(), ...stored } : defaultAiSettings();
+  if (!stored) return defaultAiSettings();
+  const merged = { ...defaultAiSettings(), ...stored };
+  // Google stopped serving these to new users: move to the current default.
+  if (RETIRED_GEMINI_MODELS.includes(merged.model)) merged.model = DEFAULT_GEMINI_MODEL;
+  return merged;
 }
 
 export interface AiSettingsPublic extends Omit<AiSettings, 'apiKey'> {
@@ -105,7 +109,7 @@ export async function testAiConnection(): Promise<{ ok: true; model: string } | 
   if (!s.consentAcceptedAt) return { ok: false, code: 'NO_CONSENT', message: 'Accept the AI privacy notice first' };
   const client = new GeminiClient({ apiKey: s.apiKey, model: s.model, timeoutMs: 15_000, ...(fetchOverride ? { fetchImpl: fetchOverride } : {}) });
   try {
-    await client.generateJson({ system: 'Reply with {"ok": true}.', parts: [{ text: 'ping' }], schema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } }, required: ['ok'] }, maxOutputTokens: 20 });
+    await client.generateJson({ system: 'Reply with {"ok": true}.', parts: [{ text: 'ping' }], schema: { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } }, required: ['ok'] }, maxOutputTokens: 1024 });
     return { ok: true, model: client.lastModel ?? s.model };
   } catch (e) {
     if (e instanceof GeminiError) return { ok: false, code: e.code, message: e.message };

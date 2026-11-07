@@ -361,7 +361,9 @@ async function weeklyNutrientGaps(date: ISODate): Promise<AssistantReply> {
 }
 
 const AI_ERROR_TEXT: Record<string, string> = {
-  RATE_LIMITED: 'Gemini’s free quota is used up for now',
+  RATE_LIMITED: 'Gemini’s free limit (5 requests per minute) was reached — wait a minute and try again',
+  OVERLOADED: 'Gemini is very busy right now — try again in a moment',
+  MODEL_NOT_FOUND: 'the selected Gemini model isn’t available for your key',
   INVALID_KEY: 'your Gemini API key was rejected — check it in Settings',
   PERMISSION_DENIED: 'Gemini refused the request — check your API key in Settings',
   OFFLINE: 'you’re offline',

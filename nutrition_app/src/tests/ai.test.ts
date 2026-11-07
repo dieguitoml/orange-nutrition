@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GeminiClient } from '../integrations/gemini';
+import { GeminiClient, resetGeminiRateLimiter, toJsonSchema } from '../integrations/gemini';
 import {
   acceptAiPrivacyNotice,
   configureAiFetch,
@@ -24,7 +24,7 @@ import { getDb } from '../data/db';
 import { freshDb } from './helpers';
 
 const KEY = 'AIzaTestKey1234567890';
-const gemini = (obj: unknown) => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] }, finishReason: 'STOP' }] }), { status: 200 });
+const gemini = (obj: unknown) => new Response(JSON.stringify({ status: 'completed', steps: [{ type: 'thought', signature: 'x' }, { type: 'model_output', content: [{ type: 'text', text: JSON.stringify(obj) }] }] }), { status: 200 });
 const geminiErr = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 0xff, 0xd9]).buffer;
 
@@ -35,6 +35,7 @@ async function enableAi(fetchImpl: (...a: unknown[]) => Promise<Response>) {
   await updateAiSettings({ photoRecognitionEnabled: true, aiSuggestionsEnabled: true });
 }
 
+beforeEach(() => resetGeminiRateLimiter());
 afterEach(() => configureAiFetch(undefined));
 
 describe('Gemini client', () => {
@@ -43,10 +44,12 @@ describe('Gemini client', () => {
     const c = new GeminiClient({ apiKey: KEY, model: 'm1', fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(await c.generateJson({ system: 's', parts: [{ text: 'hi' }], schema: { type: 'OBJECT' } })).toEqual({ ok: true });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/m1:generateContent');
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/interactions');
     expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe(KEY);
     expect(url).not.toContain(KEY);
-    expect(JSON.parse(init.body as string).generationConfig.responseMimeType).toBe('application/json');
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({ model: 'm1', system_instruction: 's', input: [{ type: 'text', text: 'hi' }], response_format: { type: 'object' } });
+    expect(body.generation_config.thinking_level).toBe('low');
   });
 
   it('maps errors from the real API shape', async () => {
@@ -54,15 +57,56 @@ describe('Gemini client', () => {
     await expect(bad.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).rejects.toMatchObject({ code: 'INVALID_KEY' });
     const limited = new GeminiClient({ apiKey: KEY, model: 'm', fetchImpl: (async () => geminiErr(429, { error: { status: 'RESOURCE_EXHAUSTED', message: 'quota' } })) as unknown as typeof fetch });
     await expect(limited.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).rejects.toMatchObject({ code: 'RATE_LIMITED' });
-    const blocked = new GeminiClient({ apiKey: KEY, model: 'm', fetchImpl: (async () => new Response(JSON.stringify({ promptFeedback: { blockReason: 'SAFETY' } }))) as unknown as typeof fetch });
-    await expect(blocked.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).rejects.toMatchObject({ code: 'BLOCKED' });
+    const empty = new GeminiClient({ apiKey: KEY, model: 'm', fetchImpl: (async () => new Response(JSON.stringify({ status: 'completed', steps: [] }))) as unknown as typeof fetch });
+    await expect(empty.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    const limitedWithWait = new GeminiClient({ apiKey: KEY, model: 'm', fetchImpl: (async () => geminiErr(429, { error: { message: 'Rate limit exceeded (limit: 5 requests per minute on Free Tier). Please retry in 50s.' } })) as unknown as typeof fetch });
+    await expect(limitedWithWait.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).rejects.toMatchObject({ code: 'RATE_LIMITED', retryAfterSeconds: 50 });
   });
 
-  it('falls back to another model when the configured one is gone', async () => {
-    const fetchImpl = vi.fn(async (url: string) => (url.includes('/old-model:') ? geminiErr(404, { error: { status: 'NOT_FOUND', message: 'not found' } }) : gemini({ ok: 1 })));
+  it('falls back to another model when the configured one is gone (incl. Google\'s empty 404)', async () => {
+    const modelOf = (init: RequestInit) => JSON.parse(init.body as string).model as string;
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => (modelOf(init) === 'old-model' ? new Response('', { status: 404 }) : gemini({ ok: 1 })));
     const c = new GeminiClient({ apiKey: KEY, model: 'old-model', fallbackModels: ['new-model'], fetchImpl: fetchImpl as unknown as typeof fetch });
     await c.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } });
     expect(c.lastModel).toBe('new-model');
+  });
+
+  it('retries "high demand" 503s, then moves to the next model', async () => {
+    const calls: string[] = [];
+    const fetchImpl = async (_url: string, init: RequestInit) => {
+      const m = JSON.parse(init.body as string).model as string;
+      calls.push(m);
+      return m === 'busy' ? geminiErr(503, { error: { code: 503, status: 'UNAVAILABLE', message: 'high demand' } }) : gemini({ ok: 1 });
+    };
+    const c = new GeminiClient({ apiKey: KEY, model: 'busy', fallbackModels: ['calm'], fetchImpl: fetchImpl as unknown as typeof fetch, sleep: async () => {} });
+    expect(await c.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).toEqual({ ok: 1 });
+    expect(calls).toEqual(['busy', 'busy', 'calm']);
+  });
+
+  it('enforces the free-tier limit client-side without spending quota', async () => {
+    const fetchImpl = vi.fn(async () => gemini({ ok: 1 }));
+    let t = 1_000_000;
+    const c = new GeminiClient({ apiKey: KEY, model: 'm', fetchImpl: fetchImpl as unknown as typeof fetch, maxRequestsPerMinute: 2, now: () => t });
+    await c.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } });
+    await c.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } });
+    await expect(c.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } })).rejects.toMatchObject({ code: 'RATE_LIMITED', retryAfterSeconds: 60 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    t += 61_000;
+    await c.generateJson({ system: '', parts: [], schema: { type: 'OBJECT' } });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('converts schemas to JSON Schema and sends images as interaction content', async () => {
+    expect(toJsonSchema({ type: 'OBJECT', properties: { a: { type: 'ARRAY', items: { type: 'STRING', enum: ['x'] } } }, required: ['a'] })).toEqual({
+      type: 'object',
+      properties: { a: { type: 'array', items: { type: 'string', enum: ['x'] } } },
+      required: ['a'],
+    });
+    const fetchImpl = vi.fn(async () => gemini({ ok: 1 }));
+    const c = new GeminiClient({ apiKey: KEY, model: 'm', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await c.generateJson({ system: '', parts: [{ text: 'what is it' }, { inline_data: { mime_type: 'image/jpeg', data: 'AAAA' } }], schema: { type: 'OBJECT' } });
+    const body = JSON.parse((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.input[1]).toEqual({ type: 'image', data: 'AAAA', mime_type: 'image/jpeg' });
   });
 
   it('times out', async () => {
@@ -136,7 +180,7 @@ describe('photo recognition', () => {
     await enableAi(fetchImpl);
     const r = await recognizeMealPhoto(JPEG, { mealType: 'dinner' });
     const body = JSON.parse((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body.contents[0].parts[1].inline_data.mime_type).toBe('image/jpeg');
+    expect(body.input[1]).toMatchObject({ type: 'image', mime_type: 'image/jpeg' });
     expect(r.items).toHaveLength(4);
     const [chicken, rice, broccoli, sorbet] = r.items;
     expect(chicken!.selectedFoodId).toBe('usda_171477'); // roasted (cooked) breast, not raw
@@ -212,7 +256,7 @@ describe('AI suggestions', () => {
     let sentContext: Record<string, unknown> = {};
     await setAllergies(['fish']);
     await enableAi(async (_url: unknown, init: unknown) => {
-      sentContext = JSON.parse(JSON.parse((init as RequestInit).body as string).contents[0].parts[0].text);
+      sentContext = JSON.parse(JSON.parse((init as RequestInit).body as string).input[0].text);
       return gemini({
         suggestions: [
           { name: 'Chicken, quinoa & greens', reason: 'Lean protein to close your protein gap.', prepTimeMinutes: 25, ingredients: [{ foodId: 'usda_171477', grams: 170 }, { foodId: 'usda_168917', grams: 185 }, { foodId: 'usda_169967', grams: 120 }], calories: 1 },
@@ -247,5 +291,23 @@ describe('AI suggestions', () => {
     expect(r2.source).toBe('rules');
     expect(r2.rejected).toHaveLength(1);
     expect(r2.recommendations.length).toBeGreaterThan(0);
+  });
+});
+
+describe('photo matching quality', () => {
+  beforeEach(async () => {
+    await freshDb();
+    await seedDatabase();
+  });
+  it('requires an identifying word, so generic words ("whole", "yellow") never match on their own', async () => {
+    const { matchDetectedFood } = await import('../services/ai');
+    const fish = await matchDetectedFood({ name: 'whole fish, raw', searchTerms: ['fish'], estimatedGrams: 600, confidence: 0.6, preparation: 'raw' });
+    expect(fish.some((m) => m.food.name.startsWith('Egg'))).toBe(false);
+    const squash = await matchDetectedFood({ name: 'yellow squash, raw', searchTerms: ['squash'], estimatedGrams: 200, confidence: 0.6 });
+    expect(squash.some((m) => /Tuna/.test(m.food.name))).toBe(false);
+    const bread = await matchDetectedFood({ name: 'whole wheat bread, sliced', searchTerms: ['bread'], estimatedGrams: 60, confidence: 0.8 });
+    expect(bread[0]?.food.name).toBe('Whole-wheat bread');
+    const beef = await matchDetectedFood({ name: 'beef roast, raw', searchTerms: ['beef'], estimatedGrams: 300, confidence: 0.7, preparation: 'raw' });
+    expect(beef[0]?.food.name).toMatch(/beef/i);
   });
 });
